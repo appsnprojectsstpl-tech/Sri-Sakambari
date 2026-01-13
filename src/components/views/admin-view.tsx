@@ -674,13 +674,27 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     if (!firestore) return;
     setLoading(true);
     try {
-      const batch = writeBatch(firestore);
-      seedProducts.forEach(product => {
+      const BATCH_SIZE = 450;
+      let batch = writeBatch(firestore);
+      let operationCount = 0;
+
+      for (const product of seedProducts) {
         const docRef = doc(firestore, 'products', product.id);
         // The createdAt field in the seed is a JS Date, Firestore handles conversion
         batch.set(docRef, product, { merge: true });
-      });
-      await batch.commit();
+        operationCount++;
+
+        if (operationCount >= BATCH_SIZE) {
+          await batch.commit();
+          batch = writeBatch(firestore);
+          operationCount = 0;
+        }
+      }
+
+      if (operationCount > 0) {
+        await batch.commit();
+      }
+
       toast({
         title: 'Database Seeded',
         description: `${seedProducts.length} products have been updated/added in Firestore.`,
@@ -703,13 +717,28 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     try {
       const productsRef = collection(firestore, 'products');
       const querySnapshot = await getDocs(productsRef);
-      const batch = writeBatch(firestore);
+
+      const BATCH_SIZE = 450;
+      let batch = writeBatch(firestore);
+      let operationCount = 0;
       let deletedCount = 0;
-      querySnapshot.forEach((doc) => {
+
+      for (const doc of querySnapshot.docs) {
         batch.delete(doc.ref);
         deletedCount++;
-      });
-      await batch.commit();
+        operationCount++;
+
+        if (operationCount >= BATCH_SIZE) {
+          await batch.commit();
+          batch = writeBatch(firestore);
+          operationCount = 0;
+        }
+      }
+
+      if (operationCount > 0) {
+        await batch.commit();
+      }
+
       toast({
         title: 'All Products Deleted',
         description: `${deletedCount} products have been removed. The page will now refresh.`,

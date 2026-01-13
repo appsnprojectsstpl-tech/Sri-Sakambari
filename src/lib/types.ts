@@ -83,6 +83,7 @@ export interface Order {
   createdAt: Date | Timestamp;
   deliveryPhotoUrl?: string;
   agreedToTerms?: boolean;
+  subscriptionId?: string;
 }
 
 export interface Subscription {

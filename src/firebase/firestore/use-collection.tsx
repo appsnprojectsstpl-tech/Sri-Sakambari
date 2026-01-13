@@ -77,6 +77,8 @@ export function useCollection<T>(
   }, []);
   
   const { disabled = false } = options;
+  // Performance: Use deep comparison for constraints to avoid expensive JSON.stringify
+  // and unnecessary re-renders/fetches when constraints object identity changes but content is same.
   const memoizedConstraints = useConstraintsMemoize(options.constraints);
 
   useEffect(() => {

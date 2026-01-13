@@ -1,0 +1,227 @@
+"use client";
+
+import { useState } from "react";
+import { useUser, useFirestore, useCollection } from "@/firebase";
+import { doc, updateDoc } from "firebase/firestore";
+import { Address, Area, User } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Plus, Trash2, MapPin, Check } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { haptics, ImpactStyle } from "@/lib/haptics";
+import { v4 as uuidv4 } from "uuid";
+
+interface AddressManagerProps {
+    onSelect?: (address: Address) => void;
+    selectedId?: string;
+    enableSelection?: boolean;
+}
+
+export default function AddressManager({ onSelect, selectedId, enableSelection = false }: AddressManagerProps) {
+    const { user } = useUser();
+    const firestore = useFirestore();
+    const { toast } = useToast();
+    const { data: areas } = useCollection<Area>("areas");
+
+    const [isAdding, setIsAdding] = useState(false);
+    const [newAddress, setNewAddress] = useState<Partial<Address>>({
+        label: "Home",
+        isDefault: false,
+    });
+
+    const addresses = user?.addresses || [];
+
+    const handleAddAddress = async () => {
+        if (!user || !firestore) return;
+        if (!newAddress.line1 || !newAddress.area || !newAddress.label) {
+            toast({ title: "Missing fields", description: "Please fill all required fields", variant: "destructive" });
+            return;
+        }
+
+        haptics.impact(ImpactStyle.Medium);
+
+        const addressToAdd: Address = {
+            id: uuidv4(),
+            label: newAddress.label,
+            line1: newAddress.line1,
+            line2: newAddress.line2 || "",
+            area: newAddress.area,
+            pincode: newAddress.pincode || "",
+            landmark: newAddress.landmark || "",
+            isDefault: addresses.length === 0 || newAddress.isDefault, // First address is default
+        };
+
+        let updatedAddresses = [...addresses, addressToAdd];
+
+        // If setting as default, unset others
+        if (addressToAdd.isDefault) {
+            updatedAddresses = updatedAddresses.map(a => ({ ...a, isDefault: a.id === addressToAdd.id }));
+        }
+
+        try {
+            await updateDoc(doc(firestore, "users", user.id), {
+                addresses: updatedAddresses,
+                // Sync legacy fields if default
+                ...(addressToAdd.isDefault ? {
+                    address: `${addressToAdd.line1}, ${addressToAdd.area}`,
+                    area: addressToAdd.area,
+                    pincode: addressToAdd.pincode,
+                } : {})
+            });
+            setIsAdding(false);
+            setNewAddress({ label: "Home", isDefault: false });
+            toast({ title: "Address Added" });
+        } catch (e) {
+            toast({ title: "Error", description: "Failed to add address", variant: "destructive" });
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!user || !firestore) return;
+        haptics.impact(ImpactStyle.Medium);
+        const updatedAddresses = addresses.filter(a => a.id !== id);
+        await updateDoc(doc(firestore, "users", user.id), { addresses: updatedAddresses });
+    };
+
+    const handleSetDefault = async (id: string) => {
+        if (!user || !firestore) return;
+        haptics.impact(ImpactStyle.Light);
+        const target = addresses.find(a => a.id === id);
+        if (!target) return;
+
+        const updatedAddresses = addresses.map(a => ({ ...a, isDefault: a.id === id }));
+
+        await updateDoc(doc(firestore, "users", user.id), {
+            addresses: updatedAddresses,
+            address: `${target.line1}, ${target.area}`,
+            area: target.area,
+            pincode: target.pincode,
+        });
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <MapPin className="h-5 w-5" /> Saved Addresses
+                </h3>
+                <Button size="sm" variant="outline" onClick={() => setIsAdding(true)}>
+                    <Plus className="h-4 w-4 mr-1" /> Add New
+                </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {addresses.map((addr) => (
+                    <Card
+                        key={addr.id}
+                        className={`relative cursor-pointer transition-colors ${selectedId === addr.id ? 'border-primary bg-primary/5' : ''}`}
+                        onClick={() => enableSelection && onSelect?.(addr)}
+                    >
+                        <CardHeader className="p-4 pb-2">
+                            <div className="flex justify-between items-start">
+                                <CardTitle className="text-base font-bold flex items-center gap-2">
+                                    {addr.label}
+                                    {addr.isDefault && <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full">Default</span>}
+                                </CardTitle>
+                                {!enableSelection && (
+                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={(e) => { e.stopPropagation(); handleDelete(addr.id); }}>
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                )}
+                                {enableSelection && selectedId === addr.id && (
+                                    <Check className="h-5 w-5 text-primary" />
+                                )}
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-4 pt-0 text-sm text-muted-foreground">
+                            <p>{addr.line1}</p>
+                            {addr.line2 && <p>{addr.line2}</p>}
+                            <p>{addr.area} - {addr.pincode}</p>
+                            {!enableSelection && !addr.isDefault && (
+                                <Button variant="link" size="sm" className="px-0 h-auto mt-2" onClick={(e) => { e.stopPropagation(); handleSetDefault(addr.id); }}>
+                                    Set as Default
+                                </Button>
+                            )}
+                        </CardContent>
+                    </Card>
+                ))}
+                {addresses.length === 0 && (
+                    <div className="col-span-full text-center py-6 text-muted-foreground bg-muted/20 rounded-lg">
+                        No saved addresses. Add one to speed up checkout!
+                    </div>
+                )}
+            </div>
+
+            <Dialog open={isAdding} onOpenChange={setIsAdding}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Add New Address</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="grid gap-2">
+                            <Label>Label</Label>
+                            <Select value={newAddress.label} onValueChange={(v) => setNewAddress({ ...newAddress, label: v })}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Home">Home</SelectItem>
+                                    <SelectItem value="Work">Work</SelectItem>
+                                    <SelectItem value="Parents">Parents</SelectItem>
+                                    <SelectItem value="Other">Other</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Address Line 1</Label>
+                            <Textarea
+                                value={newAddress.line1 || ''}
+                                onChange={e => setNewAddress({ ...newAddress, line1: e.target.value })}
+                                placeholder="House No, Building, Street"
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Area</Label>
+                            <Select value={newAddress.area} onValueChange={(v) => setNewAddress({ ...newAddress, area: v })}>
+                                <SelectTrigger><SelectValue placeholder="Select Area" /></SelectTrigger>
+                                <SelectContent>
+                                    {areas?.map(area => (
+                                        <SelectItem key={area.id} value={area.name}>{area.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Pincode</Label>
+                            <Input
+                                value={newAddress.pincode || ''}
+                                onChange={e => setNewAddress({ ...newAddress, pincode: e.target.value })}
+                                placeholder="5000XX"
+                                type="number"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsAdding(false)}>Cancel</Button>
+                        <Button onClick={handleAddAddress}>Save Address</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}

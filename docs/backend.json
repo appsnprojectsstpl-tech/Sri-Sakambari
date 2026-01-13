@@ -1,0 +1,241 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a user of the application.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The unique identifier for the user, matching the Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "The user's full name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "phone": {
+          "type": "string",
+          "description": "The user's phone number."
+        },
+        "role": {
+          "type": "string",
+          "description": "The role of the user, determining their access level.",
+          "enum": ["customer", "admin", "delivery"]
+        },
+        "area": {
+          "type": "string",
+          "description": "The delivery area associated with the user."
+        },
+        "address": {
+          "type": "string",
+          "description": "The user's primary delivery address."
+        },
+        "landmark": {
+          "type": "string",
+          "description": "An optional landmark for the address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the user account was created."
+        }
+      },
+      "required": ["id", "name", "email", "role", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Represents an item available for sale.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "pricePerUnit": { "type": "number" },
+        "unit": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "imageHint": { "type": "string" },
+        "displayOrder": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isCutVegetable": { "type": "boolean", "description": "Flag for cut vegetables which may have extra charges." },
+        "cutCharge": { "type": "number", "description": "Extra charge for pre-cut vegetables." }
+      },
+      "required": ["id", "name", "category", "pricePerUnit", "unit", "isActive", "imageUrl"]
+    },
+    "Area": {
+      "title": "Area",
+      "description": "Represents a delivery area.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "defaultSlots": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "name", "defaultSlots"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Represents a customer's order.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "name": { "type": "string", "description": "The customer's name, from the sales order form." },
+        "phone": { "type": "string", "description": "The customer's phone number, from the sales order form." },
+        "address": { "type": "string", "description": "The customer's address, from the sales order form." },
+        "deliveryPlace": { "type": "string", "description": "The specific delivery location, from the sales order form." },
+        "deliveryPartnerId": { "type": "string", "description": "The UID of the assigned delivery partner." },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "qty": { "type": "number" },
+              "priceAtOrder": { "type": "number" },
+              "isCut": { "type": "boolean" },
+              "cutCharge": { "type": "number" }
+            },
+            "required": ["productId", "qty", "priceAtOrder"]
+          }
+        },
+        "totalAmount": { "type": "number" },
+        "paymentMode": { "type": "string", "enum": ["COD", "ONLINE"] },
+        "orderType": { "type": "string", "enum": ["ONE_TIME", "SUBSCRIPTION_GENERATED"] },
+        "area": { "type": "string" },
+        "deliveryDate": { "type": "string", "format": "date" },
+        "deliverySlot": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "PENDING_PAYMENT", "CONFIRMED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "agreedToTerms": { "type": "boolean" }
+      },
+      "required": ["id", "customerId", "name", "phone", "address", "deliveryPlace", "items", "totalAmount", "paymentMode", "area", "deliveryDate", "status", "createdAt", "agreedToTerms"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Represents a recurring order subscription.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "planName": { "type": "string" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "productId": { "type": "string" },
+              "qty": { "type": "number" }
+            },
+            "required": ["productId", "qty"]
+          }
+        },
+        "frequency": { "type": "string", "enum": ["DAILY", "ALTERNATE", "WEEKEND", "CUSTOM"] },
+        "area": { "type": "string" },
+        "deliverySlot": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "customerId", "planName", "items", "frequency", "area", "startDate", "isActive"]
+    },
+    "DeliveryRun": {
+      "title": "DeliveryRun",
+      "description": "A planned run for delivering orders.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deliveryDate": { "type": "string", "format": "date" },
+        "area": { "type": "string" },
+        "slot": { "type": "string" },
+        "orderIds": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["PLANNED", "IN_PROGRESS", "COMPLETED"] }
+      },
+      "required": ["id", "deliveryDate", "area", "slot", "orderIds", "status"]
+    },
+     "AdminRole": {
+      "title": "AdminRole",
+      "description": "A record indicating a user has admin privileges. The document ID is the user's UID.",
+      "type": "object",
+      "properties": {
+        "assignedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the admin role was assigned."
+        }
+      },
+      "required": ["assignedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "The UID of the user this notification is for." },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "message", "isRead", "createdAt"]
+    },
+    "OrderCounter": {
+      "title": "OrderCounter",
+      "description": "A counter to generate sequential order IDs.",
+      "type": "object",
+      "properties": {
+        "lastId": {
+          "type": "number",
+          "description": "The last used order number."
+        }
+      },
+      "required": ["lastId"]
+    }
+  },
+  "auth": {
+    "providers": ["email_password", "google", "phone"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores public profiles for all users."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "The global catalog of all products."
+    },
+    "/areas/{areaId}": {
+        "schema": { "$ref": "#/entities/Area" },
+        "description": "List of serviceable delivery areas."
+    },
+    "/orders/{orderId}": {
+        "schema": { "$ref": "#/entities/Order" },
+        "description": "All customer orders in a single collection."
+    },
+    "/subscriptions/{subscriptionId}": {
+        "schema": { "$ref": "#/entities/Subscription" },
+        "description": "All customer subscriptions in a single collection."
+    },
+    "/deliveryRuns/{runId}": {
+        "schema": { "$ref": "#/entities/DeliveryRun" },
+        "description": "Delivery routes and schedules for staff."
+    },
+    "/roles_admin/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRole" },
+      "description": "A collection where the existence of a document grants a user admin rights."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "A collection storing notifications for all users."
+    },
+    "/orderCounters/{counterId}": {
+      "schema": { "$ref": "#/entities/OrderCounter" },
+      "description": "Stores counters for various entities, like orders."
+    }
+  }
+}

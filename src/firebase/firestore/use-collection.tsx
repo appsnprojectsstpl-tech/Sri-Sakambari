@@ -1,0 +1,160 @@
+
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  onSnapshot,
+  query,
+  collection,
+  orderBy,
+  limit,
+  startAfter,
+  endBefore,
+  limitToLast,
+  where,
+  type Query,
+  type DocumentData,
+  type FirestoreError,
+  type QueryConstraint,
+  type CollectionReference,
+  type Timestamp,
+} from 'firebase/firestore';
+import { useFirestore } from '../provider';
+
+type WhereFilterOp =
+  | '<'
+  | '<='
+  | '=='
+  | '!='
+  | '>='
+  | '>'
+  | 'array-contains'
+  | 'in'
+  | 'not-in'
+  | 'array-contains-any';
+
+type OrderByDirection = 'desc' | 'asc';
+
+type Constraint =
+  | ['where', string, WhereFilterOp, any]
+  | ['orderBy', string, OrderByDirection?]
+  | ['limit', number]
+  | ['limitToLast', number]
+  | ['startAfter', ...any[]]
+  | ['endBefore', ...any[]];
+
+interface UseCollectionOptions {
+  constraints?: Constraint[];
+  disabled?: boolean;
+}
+
+
+interface UseCollectionReturn<T> {
+  data: T[] | null;
+  loading: boolean;
+  error: FirestoreError | null;
+  forceRefetch: () => void;
+}
+
+// Function to recursively convert Firestore Timestamps to JS Dates in an object
+const convertTimestamps = (data: DocumentData): DocumentData => {
+    const newData: DocumentData = {};
+    for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            const value = data[key];
+            if (value instanceof Object && 'seconds' in value && 'nanoseconds' in value && !(value instanceof Date)) {
+                newData[key] = (value as Timestamp).toDate();
+            } else if (Array.isArray(value)) {
+                newData[key] = value.map(item => (item instanceof Object ? convertTimestamps(item) : item));
+            } else if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+                newData[key] = convertTimestamps(value);
+            } else {
+                newData[key] = value;
+            }
+        }
+    }
+    return newData;
+};
+
+
+export function useCollection<T>(
+  collectionName: string,
+  options: UseCollectionOptions = {}
+): UseCollectionReturn<T> {
+  const firestore = useFirestore();
+  const [data, setData] = useState<T[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<FirestoreError | null>(null);
+  const [refetchIndex, setRefetchIndex] = useState(0);
+
+  const forceRefetch = useCallback(() => {
+    setRefetchIndex(prev => prev + 1);
+  }, []);
+  
+  const { disabled = false } = options;
+
+  useEffect(() => {
+    if (!firestore || disabled) {
+      setData([]); // Return empty array if disabled
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+        const collectionRef: CollectionReference = collection(firestore, collectionName);
+        
+        const queryConstraints: QueryConstraint[] = (options.constraints || []).map(constraint => {
+            const [type, ...args] = constraint;
+            switch(type) {
+                case 'where':
+                    return where(args[0] as string, args[1] as WhereFilterOp, args[2]);
+                case 'orderBy':
+                    return orderBy(args[0] as string, args[1] as OrderByDirection | undefined);
+                case 'limit':
+                    return limit(args[0] as number);
+                case 'limitToLast':
+                    return limitToLast(args[0] as number);
+                case 'startAfter':
+                    return startAfter(...args);
+                case 'endBefore':
+                    return endBefore(...args);
+                default:
+                    // This should not happen with proper typing
+                    throw new Error(`Unknown query constraint type: ${type}`);
+            }
+        });
+
+        const q: Query<DocumentData> = query(collectionRef, ...queryConstraints);
+
+        const unsubscribe = onSnapshot(
+        q,
+        (querySnapshot) => {
+            const items: T[] = [];
+            querySnapshot.forEach((doc) => {
+              const docData = doc.data();
+              const convertedData = convertTimestamps(docData);
+              items.push({ id: doc.id, ...convertedData } as T);
+            });
+            setData(items);
+            setLoading(false);
+        },
+        (err: FirestoreError) => {
+            console.error(`Error fetching collection ${collectionName}:`, err);
+            setError(err);
+            setData([]); // Set data to empty array on error to avoid breaking UI
+            setLoading(false);
+        }
+        );
+
+        return () => unsubscribe();
+    } catch (e: any) {
+        console.error(`Error building query for collection ${collectionName}:`, e);
+        setError(e);
+        setData([]);
+        setLoading(false);
+    }
+  }, [firestore, collectionName, JSON.stringify(options.constraints), disabled, refetchIndex]); // Deep comparison for constraints
+
+  return { data, loading, error, forceRefetch };
+}

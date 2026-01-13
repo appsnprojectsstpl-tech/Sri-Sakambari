@@ -1,0 +1,216 @@
+
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { useUser, useCollection, useFirestore } from '@/firebase';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { Order, Product, CartItem } from '@/lib/types';
+import { useToast } from '@/hooks/use-toast';
+import { useLanguage } from '@/context/language-context';
+import { getProductName } from '@/lib/translations';
+import { useRouter } from 'next/navigation';
+import Header from '@/components/header';
+import { signOut } from 'firebase/auth';
+import { useAuth } from '@/firebase';
+import dynamic from 'next/dynamic';
+
+const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
+
+export default function ProfilePage() {
+    const { user, loading: userLoading } = useUser();
+    const { toast } = useToast();
+    const { language } = useLanguage();
+    const router = useRouter();
+    const auth = useAuth();
+
+    const { data: rawOrders, loading: ordersLoading } = useCollection<Order>('orders', {
+        constraints: user?.id ? [['where', 'customerId', '==', user.id]] : [],
+        disabled: !user?.id,
+    });
+
+    const orders = useMemo(() => {
+        if (!rawOrders) return [];
+        return [...rawOrders].sort((a, b) => {
+            const dateA = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt as any).getTime();
+            const dateB = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt as any).getTime();
+            return dateB - dateA;
+        });
+    }, [rawOrders]);
+
+    const { data: products, loading: productsLoading } = useCollection<Product>('products');
+
+    useEffect(() => {
+        if (!userLoading && !user) {
+            router.push('/login');
+        }
+    }, [user, userLoading, router]);
+
+    const handleLogout = async () => {
+        if (auth) {
+            await signOut(auth);
+            router.push('/dashboard');
+        }
+    };
+
+    const handleRepeatOrder = (order: Order) => {
+        if (!products) return;
+
+        const unavailableItems: string[] = [];
+        const itemsToProcess: CartItem[] = [];
+
+        order.items.forEach(item => {
+            const product = products.find(p => p.id === item.productId && p.isActive);
+            if (product) {
+                itemsToProcess.push({
+                    product,
+                    quantity: item.qty,
+                    isCut: item.isCut || false
+                });
+            } else {
+                const unavailableProduct = products.find(p => p.id === item.productId);
+                unavailableItems.push(unavailableProduct?.name || 'Unknown Item');
+            }
+        });
+
+        if (itemsToProcess.length === 0) {
+            toast({
+                variant: 'destructive',
+                title: 'All items are unavailable',
+                description: `None of the items from this order can be added to your cart.`,
+            });
+            return;
+        }
+
+        if (typeof window !== 'undefined') {
+            const currentCartJson = localStorage.getItem('cart');
+            try {
+                currentCart = currentCartJson ? JSON.parse(currentCartJson) : [];
+            } catch (e) {
+                console.error("Failed to parse cart", e);
+            }
+        }
+
+        itemsToProcess.forEach(newItem => {
+            const existingItemIndex = currentCart.findIndex(
+                c => c.product.id === newItem.product.id && c.isCut === newItem.isCut
+            );
+            if (existingItemIndex > -1) {
+                currentCart[existingItemIndex].quantity += newItem.quantity;
+            } else {
+                currentCart.push(newItem);
+            }
+        });
+
+        localStorage.setItem('cart', JSON.stringify(currentCart));
+        window.dispatchEvent(new Event("storage"));
+
+        if (unavailableItems.length > 0) {
+            toast({
+                variant: 'destructive',
+                title: 'Some items are unavailable',
+                description: `The following items could not be added to your cart: ${unavailableItems.join(', ')}`,
+            });
+        } else {
+            toast({
+                title: 'Items Added to Cart',
+                description: 'Items from your previous order have been added to your cart.',
+            });
+        }
+
+        router.push('/dashboard');
+    };
+
+    if (userLoading || ordersLoading || productsLoading || !user) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <p>Loading profile...</p>
+            </div>
+        );
+    }
+
+    const formatDate = (date: any) => {
+        if (!date) return 'Invalid Date';
+        const jsDate = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
+        if (isNaN(jsDate.getTime())) return 'Invalid Date';
+        return jsDate.toLocaleDateString();
+    }
+
+    const emptyArray: any[] = [];
+    const noop = () => { };
+
+    return (
+        <div className="flex flex-col min-h-screen bg-background text-foreground">
+            <Header
+                user={user}
+                onLogout={handleLogout}
+                cartCount={0}
+                notifications={emptyArray}
+                onCartClick={noop}
+            />
+            <main className="container mx-auto px-4 py-8">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-2xl font-bold">{user.name}</CardTitle>
+                        <CardDescription>{user.email}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-8">
+                        <div>
+                            <AddressManager />
+                        </div>
+
+                        <div className="space-y-4">
+                            <h3 className="text-xl font-semibold">Order History</h3>
+                            {orders && orders.length > 0 ? (
+                                <Accordion type="single" collapsible className="w-full">
+                                    {orders.map(order => (
+                                        <AccordionItem value={order.id} key={order.id}>
+                                            <AccordionTrigger>
+                                                <div className="flex justify-between w-full pr-4">
+                                                    <span>Order #{order.id}</span>
+                                                    <Badge>{order.status}</Badge>
+                                                    <span>{formatDate(order.createdAt)}</span>
+                                                </div>
+                                            </AccordionTrigger>
+                                            <AccordionContent>
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Item</TableHead>
+                                                            <TableHead>Quantity</TableHead>
+                                                            <TableHead>Price</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {order.items.map(item => {
+                                                            const product = products?.find(p => p.id === item.productId);
+                                                            return (
+                                                                <TableRow key={item.productId}>
+                                                                    <TableCell>{product ? getProductName(product, language) : 'Item not found'}</TableCell>
+                                                                    <TableCell>{item.qty}</TableCell>
+                                                                    <TableCell>{item.priceAtOrder.toFixed(2)}</TableCell>
+                                                                </TableRow>
+                                                            );
+                                                        })}
+                                                    </TableBody>
+                                                </Table>
+                                                <div className="flex justify-end items-center mt-4 gap-4">
+                                                    <span className="font-bold">Total: {order.totalAmount.toFixed(2)}</span>
+                                                    <Button onClick={() => handleRepeatOrder(order)}>Repeat Order</Button>
+                                                </div>
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    ))}
+                                </Accordion>
+                            ) : (
+                                <p className="text-muted-foreground">You have not placed any orders yet.</p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+            </main>
+        </div>
+    );
+}

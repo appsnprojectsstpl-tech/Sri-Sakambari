@@ -1,0 +1,106 @@
+{
+  "placeholderImages": [
+    {
+      "id": "prod_1",
+      "description": "Sweet Corn packet",
+      "imageUrl": "https://images.unsplash.com/photo-1649251037465-72c9d378acb6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxzd2VldCUyMGNvcm58ZW58MHx8fHwxNzY0MTI5NjE5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "sweet corn"
+    },
+    {
+      "id": "prod_2",
+      "description": "Baby Corn packet",
+      "imageUrl": "https://images.unsplash.com/photo-1761545832792-535fafbad368?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxiYWJ5JTIwY29ybnxlbnwwfHx8fDE3NjQxMjk2MTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "baby corn"
+    },
+    {
+      "id": "prod_3",
+      "description": "Mushrooms packet",
+      "imageUrl": "https://images.unsplash.com/photo-1630921121767-81e86d066a5d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxtdXNocm9vbXN8ZW58MHx8fHwxNzY0MTI5NjE5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mushrooms"
+    },
+    {
+      "id": "prod_4",
+      "description": "Green Peas",
+      "imageUrl": "https://images.unsplash.com/photo-1560705185-d0291220a442?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxncmVlbiUyMHBlYXN8ZW58MHx8fHwxNzY0MDkxNDMyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "green peas"
+    },
+    {
+      "id": "prod_5",
+      "description": "Broccoli",
+      "imageUrl": "https://images.unsplash.com/photo-1553175005-a1129d5c188c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw3fHxicm9jY29saXxlbnwwfHx8fDE3NjQwMjU5NzJ8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "broccoli"
+    },
+    {
+      "id": "prod_6",
+      "description": "Capsicum",
+      "imageUrl": "https://images.unsplash.com/photo-1632992468737-54880593aada?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxjYXBzaWN1bXxlbnwwfHx8fDE3NjQxMjk2MTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "capsicum"
+    },
+    {
+      "id": "prod_7",
+      "description": "Panasa Pottu (Jackfruit)",
+      "imageUrl": "https://images.unsplash.com/photo-1651565919334-bf81165cd0a3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwzfHxyYXclMjBqYWNrZnJ1aXR8ZW58MHx8fHwxNzY0MTI5NjE5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "raw jackfruit"
+    },
+    {
+      "id": "prod_8",
+      "description": "Red Cabbage",
+      "imageUrl": "https://images.unsplash.com/photo-1667986968266-20d2506922f5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxyZWQlMjBjYWJiYWdlfGVufDB8fHx8MTc2NDEyOTYxOXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "red cabbage"
+    },
+    {
+      "id": "prod_9",
+      "description": "Milk bottle",
+      "imageUrl": "https://images.unsplash.com/photo-1609983197242-e040754ebbcd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxMHx8bWlsayUyMGJvdHRsZXxlbnwwfHx8fDE3NjQxMjk2MTl8MA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "milk bottle"
+    },
+    {
+      "id": "prod_10",
+      "description": "Curd bowl",
+      "imageUrl": "https://images.unsplash.com/photo-1609869825728-f9c0b69ed13d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHx5b2d1cnQlMjBib3dsfGVufDB8fHx8MTc2NDEwMzM2MXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "yogurt bowl"
+    },
+    {
+      "id": "prod_11",
+      "description": "Butter block",
+      "imageUrl": "https://images.unsplash.com/photo-1590912710024-6d51a6771abd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw0fHxidXR0ZXJ8ZW58MHx8fHwxNzY0MTI5NjE5fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "butter"
+    },
+    {
+      "id": "prod_12",
+      "description": "Paneer cubes",
+      "imageUrl": "https://images.unsplash.com/photo-1690369642866-3f9143af0a89?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw5fHxwYW5lZXIlMjBjaGVlc2V8ZW58MHx8fHwxNzY0MDg4MzE1fDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "paneer cheese"
+    },
+    {
+      "id": "prod_13",
+      "description": "Cut Veg Mix packet",
+      "imageUrl": "https://images.unsplash.com/photo-1700150618387-3f46b6d2cf8e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw4fHxtaXhlZCUyMHZlZ2V0YWJsZXN8ZW58MHx8fHwxNzY0MDg3MjAyfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "mixed vegetables"
+    },
+    {
+      "id": "prod_14",
+      "description": "Vegetable basket",
+      "imageUrl": "https://images.unsplash.com/photo-1690934167884-08c184b6c606?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHwxfHx2ZWdldGFibGUlMjBiYXNrZXR8ZW58MHx8fHwxNzY0MDU5MTUxfDA&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "vegetable basket"
+    },
+    {
+      "id": "prod_15",
+      "description": "Dairy products combo",
+      "imageUrl": "https://images.unsplash.com/photo-1523473827533-2a64d0d36748?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3NDE5ODJ8MHwxfHNlYXJjaHw1fHxkYWlyeSUyMHByb2R1Y3RzfGVufDB8fHx8MTc2NDA3NDExNXww&ixlib=rb-4.1.0&q=80&w=1080",
+      "imageHint": "dairy products"
+    },
+    {
+      "id": "prod_16",
+      "description": "Beet Root",
+      "imageUrl": "https://i.ibb.co/3sW82WC/beetroot.jpg",
+      "imageHint": "beet root"
+    },
+    {
+      "id": "prod_17",
+      "description": "Bottle Gourd",
+      "imageUrl": "https://i.ibb.co/FzB3FpY/bottle-gourd.jpg",
+      "imageHint": "bottle gourd"
+    }
+  ]
+}

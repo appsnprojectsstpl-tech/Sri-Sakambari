@@ -27,21 +27,22 @@ export function deepCompare(a: any, b: any): boolean {
   if (a === b) return true;
   if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return a === b;
 
-  if (a instanceof Date && b instanceof Date) {
-    return a.getTime() === b.getTime();
-  }
-
-  // Handle Firebase Timestamps if they appear
-  if (a instanceof Object && 'seconds' in a && 'nanoseconds' in a && b instanceof Object && 'seconds' in b && 'nanoseconds' in b) {
-      return a.seconds === b.seconds && a.nanoseconds === b.nanoseconds;
-  }
-
   if (Array.isArray(a)) {
     if (!Array.isArray(b) || a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
       if (!deepCompare(a[i], b[i])) return false;
     }
     return true;
+  }
+
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  // Handle Firebase Timestamps if they appear
+  // We already know a and b are objects and not null
+  if ('seconds' in a && 'nanoseconds' in a && 'seconds' in b && 'nanoseconds' in b) {
+      return a.seconds === b.seconds && a.nanoseconds === b.nanoseconds;
   }
 
   const keysA = Object.keys(a);

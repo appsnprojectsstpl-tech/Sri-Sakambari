@@ -27,13 +27,15 @@ export function deepCompare(a: any, b: any): boolean {
   if (a === b) return true;
   if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return a === b;
 
-  if (a instanceof Date && b instanceof Date) {
-    return a.getTime() === b.getTime();
+  if (a instanceof Date || b instanceof Date) {
+    return (a instanceof Date && b instanceof Date) && a.getTime() === b.getTime();
   }
 
-  // Handle Firebase Timestamps if they appear
-  if (a instanceof Object && 'seconds' in a && 'nanoseconds' in a && b instanceof Object && 'seconds' in b && 'nanoseconds' in b) {
-      return a.seconds === b.seconds && a.nanoseconds === b.nanoseconds;
+  // Handle Firebase Timestamps
+  const isATimestamp = 'seconds' in a && 'nanoseconds' in a;
+  const isBTimestamp = 'seconds' in b && 'nanoseconds' in b;
+  if (isATimestamp || isBTimestamp) {
+      return isATimestamp && isBTimestamp && a.seconds === b.seconds && a.nanoseconds === b.nanoseconds;
   }
 
   if (Array.isArray(a)) {
@@ -44,13 +46,24 @@ export function deepCompare(a: any, b: any): boolean {
     return true;
   }
 
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-  for (const key of keysA) {
-    if (!Object.prototype.hasOwnProperty.call(b, key) || !deepCompare(a[key], b[key])) return false;
+  if (Array.isArray(b)) return false;
+
+  // Optimized object iteration to avoid Object.keys allocation
+  let countA = 0;
+  for (const key in a) {
+    if (Object.prototype.hasOwnProperty.call(a, key)) {
+        countA++;
+        if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+        if (!deepCompare(a[key], b[key])) return false;
+    }
   }
-  return true;
+
+  let countB = 0;
+  for (const key in b) {
+      if (Object.prototype.hasOwnProperty.call(b, key)) countB++;
+  }
+
+  return countA === countB;
 }
 
 // Specialized Comparator for Constraints
@@ -76,26 +89,6 @@ export function compareConstraints(a: Constraint[] | undefined, b: Constraint[] 
             if (v1 === v2) continue;
 
             if (typeof v1 === 'object' && v1 !== null && typeof v2 === 'object' && v2 !== null) {
-                if (v1 instanceof Date && v2 instanceof Date) {
-                    if (v1.getTime() !== v2.getTime()) return false;
-                    continue;
-                }
-
-                // Handle Firebase Timestamps
-                if ('seconds' in v1 && 'nanoseconds' in v1 && 'seconds' in v2 && 'nanoseconds' in v2) {
-                    if ((v1 as Timestamp).seconds !== (v2 as Timestamp).seconds || (v1 as Timestamp).nanoseconds !== (v2 as Timestamp).nanoseconds) {
-                        return false;
-                    }
-                    continue;
-                }
-
-                if (Array.isArray(v1) && Array.isArray(v2)) {
-                     if (v1.length !== v2.length) return false;
-                     // Use generic deep compare for array contents to be safe
-                     if (!deepCompare(v1, v2)) return false;
-                     continue;
-                }
-
                 if (!deepCompare(v1, v2)) return false;
             } else {
                 return false;

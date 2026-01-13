@@ -23,7 +23,6 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const { language } = useLanguage();
 
     const { data: users, loading: usersLoading } = useCollection<User>('users');
-    const { data: products, loading: productsLoading } = useCollection<Product>('products');
     const { data: assignedOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: [['where', 'deliveryPartnerId', '==', auth?.currentUser?.uid || '']]
     });
@@ -92,7 +91,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
         }
     };
 
-    if (ordersLoading || usersLoading || productsLoading || notificationsLoading) {
+    if (ordersLoading || usersLoading || notificationsLoading) {
         return <div className="container mx-auto px-4 py-8"><p>Loading deliveries...</p></div>
     }
 
@@ -142,10 +141,10 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                                                     <h4 className="font-semibold mb-2">{t('items', language)}</h4>
                                                     <ul className="space-y-1 text-sm">
                                                         {order.items.map(item => {
-                                                            const product = products?.find(p => p.id === item.productId);
+                                                            const productName = language === 'te' && item.name_te ? item.name_te : (item.name || 'Unknown Item');
                                                             return (
                                                                 <li key={item.productId} className="flex justify-between">
-                                                                    <span>{product ? getProductName(product, language) : 'Unknown Item'}</span>
+                                                                    <span>{productName}</span>
                                                                     <span className="text-muted-foreground">Qty: {item.qty}</span>
                                                                 </li>
                                                             )

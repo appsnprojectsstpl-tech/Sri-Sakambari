@@ -166,6 +166,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [isSeedDialogOpen, setSeedDialogOpen] = useState(false);
   const [isClearProductsDialogOpen, setClearProductsDialogOpen] = useState(false);
   const [isCouponDialogOpen, setCouponDialogOpen] = useState(false);
+  const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
 
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
@@ -721,6 +722,79 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
+  const handleMigrateOrders = async () => {
+    if (!firestore || !orders || !products) return;
+    setLoading(true);
+
+    try {
+      // Chunk updates to respect Firestore batch limit of 500
+      const updates: { ref: any, data: any }[] = [];
+
+      orders.forEach(order => {
+        let orderUpdated = false;
+        const updatedItems = order.items.map(item => {
+          // If item already has name, skip
+          if (item.name) return item;
+
+          const product = products.find(p => p.id === item.productId);
+          if (product) {
+            orderUpdated = true;
+            return {
+              ...item,
+              name: product.name,
+              name_te: product.name_te,
+              unit: product.unit
+            };
+          }
+          return item;
+        });
+
+        if (orderUpdated) {
+          const orderRef = doc(firestore, 'orders', order.id);
+          updates.push({ ref: orderRef, data: { items: updatedItems } });
+        }
+      });
+
+      if (updates.length > 0) {
+        const chunkSize = 400; // Safe limit below 500
+        let updatedCount = 0;
+
+        for (let i = 0; i < updates.length; i += chunkSize) {
+          const batch = writeBatch(firestore);
+          const chunk = updates.slice(i, i + chunkSize);
+
+          chunk.forEach(update => {
+            batch.update(update.ref, update.data);
+          });
+
+          await batch.commit();
+          updatedCount += chunk.length;
+        }
+
+        toast({
+          title: 'Orders Migrated',
+          description: `Successfully updated ${updatedCount} orders with product names.`,
+        });
+      } else {
+        toast({
+          title: 'No Migration Needed',
+          description: 'All orders already have product names.',
+        });
+      }
+
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Migration Failed',
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
+      setMigrateDialogOpen(false);
+      // Ideally force refetch orders here
+    }
+  };
+
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -867,7 +941,10 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </TabsContent>
 
         <TabsContent value="orders">
-          <div className="flex justify-end my-4">
+          <div className="flex justify-end my-4 gap-2">
+            <Button variant="outline" onClick={() => setMigrateDialogOpen(true)} disabled={ordersLoading || !orders || !products}>
+              <Database className="mr-2 h-4 w-4" /> Migrate Orders
+            </Button>
             <Button onClick={handleExportClick} disabled={ordersLoading || !orders || orders.length === 0}>
               <Download className="mr-2 h-4 w-4" />
               Export to Excel
@@ -1518,6 +1595,23 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleClearAllProducts} disabled={loading}>
               {loading ? 'Clearing...' : 'Yes, Clear All'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isMigrateDialogOpen} onOpenChange={setMigrateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Migrate Old Orders?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will scan all orders and populate product names for items that are missing them. This is required for the new optimized delivery view.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleMigrateOrders} disabled={loading}>
+              {loading ? 'Migrating...' : 'Start Migration'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

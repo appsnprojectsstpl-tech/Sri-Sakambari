@@ -517,7 +517,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       const totalProducts = lines.length;
 
       try {
-        const batch = writeBatch(firestore);
+        const BATCH_SIZE = 450;
+        let batch = writeBatch(firestore);
+        let operationCount = 0;
 
         for (let i = 0; i < totalProducts; i++) {
           const line = lines[i];
@@ -551,9 +553,18 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             createdAt: serverTimestamp(),
           });
           successCount++;
+          operationCount++;
+
+          if (operationCount >= BATCH_SIZE) {
+            await batch.commit();
+            batch = writeBatch(firestore);
+            operationCount = 0;
+          }
         }
 
-        await batch.commit();
+        if (operationCount > 0) {
+          await batch.commit();
+        }
 
         toast({
           title: 'Bulk Upload Complete',

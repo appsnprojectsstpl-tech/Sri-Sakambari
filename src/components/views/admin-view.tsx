@@ -1233,7 +1233,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 <div className="mt-4 grid grid-cols-3 gap-2">
                   {editingProduct && (
                     ('images' in editingProduct && Array.isArray(editingProduct.images) ? editingProduct.images : (editingProduct.imageUrl ? [editingProduct.imageUrl] : [])).map((url, index) => (
-                      <div key={index} className="relative aspect-square bg-muted rounded-md overflow-hidden group">
+                      <div key={url} className="relative aspect-square bg-muted rounded-md overflow-hidden group">
                         <Image src={url} alt={`Product ${index + 1}`} fill className="object-cover" />
                         <button
                           type="button"

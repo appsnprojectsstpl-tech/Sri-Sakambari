@@ -19,28 +19,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { useFirestore } from '../provider';
-
-type WhereFilterOp =
-  | '<'
-  | '<='
-  | '=='
-  | '!='
-  | '>='
-  | '>'
-  | 'array-contains'
-  | 'in'
-  | 'not-in'
-  | 'array-contains-any';
-
-type OrderByDirection = 'desc' | 'asc';
-
-type Constraint =
-  | ['where', string, WhereFilterOp, any]
-  | ['orderBy', string, OrderByDirection?]
-  | ['limit', number]
-  | ['limitToLast', number]
-  | ['startAfter', ...any[]]
-  | ['endBefore', ...any[]];
+import { compareConstraints, type Constraint, type WhereFilterOp, type OrderByDirection } from './utils';
 
 interface UseCollectionOptions {
   constraints?: Constraint[];
@@ -75,34 +54,9 @@ const convertTimestamps = (data: DocumentData): DocumentData => {
     return newData;
 };
 
-function deepCompare(a: any, b: any): boolean {
-  if (a === b) return true;
-  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return a === b;
-
-  if (a instanceof Date && b instanceof Date) {
-    return a.getTime() === b.getTime();
-  }
-
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b) || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (!deepCompare(a[i], b[i])) return false;
-    }
-    return true;
-  }
-
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-  for (const key of keysA) {
-    if (!Object.prototype.hasOwnProperty.call(b, key) || !deepCompare(a[key], b[key])) return false;
-  }
-  return true;
-}
-
-function useDeepCompareMemoize<T>(value: T): T {
-  const ref = useRef<T>(value);
-  if (!deepCompare(value, ref.current)) {
+function useConstraintsMemoize(value: Constraint[] | undefined): Constraint[] | undefined {
+  const ref = useRef<Constraint[] | undefined>(value);
+  if (!compareConstraints(value, ref.current)) {
     ref.current = value;
   }
   return ref.current;
@@ -123,7 +77,7 @@ export function useCollection<T>(
   }, []);
   
   const { disabled = false } = options;
-  const memoizedConstraints = useDeepCompareMemoize(options.constraints);
+  const memoizedConstraints = useConstraintsMemoize(options.constraints);
 
   useEffect(() => {
     if (!firestore || disabled) {

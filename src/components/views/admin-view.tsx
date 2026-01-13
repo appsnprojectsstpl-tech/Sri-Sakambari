@@ -702,7 +702,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
-  const removeImage = (indexToRemove: number) => {
+  const removeImage = (urlToRemove: string) => {
     setEditingProduct(prev => {
       if (!prev) return null;
       // Safety check for existing images
@@ -710,7 +710,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         ? prev.images
         : (prev.imageUrl ? [prev.imageUrl] : []);
 
-      const updatedImages = currentImages.filter((_, index) => index !== indexToRemove);
+      const updatedImages = currentImages.filter((url) => url !== urlToRemove);
 
       return {
         ...prev,
@@ -1248,7 +1248,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                         <Image src={url} alt={`Product ${index + 1}`} fill className="object-cover" />
                         <button
                           type="button"
-                          onClick={() => removeImage(index)}
+                          onClick={() => removeImage(url)}
                           className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                           title="Remove Image"
                         >

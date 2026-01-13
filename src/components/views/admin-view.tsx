@@ -50,6 +50,7 @@ import { Copy } from 'lucide-react';
 import { Database } from 'lucide-react';
 import { Bell } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '../ui/input';
@@ -60,7 +61,7 @@ import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -120,8 +121,16 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { language } = useLanguage();
+  const [activeTab, setActiveTab] = useState("products");
 
-  const { data: users, loading: usersLoading, error: usersError } = useCollection<User>('users');
+  // Pagination State
+  const PRODUCTS_PER_PAGE = 10;
+  const [pageIndex, setPageIndex] = useState(0);
+  const [cursors, setCursors] = useState<any[][]>([]);
+
+  // Fetch users if we are on tabs that need user details
+  const shouldFetchUsers = activeTab === 'users' || activeTab === 'orders' || activeTab === 'subscriptions';
+  const { data: users, loading: usersLoading, error: usersError } = useCollection<User>('users', { disabled: !shouldFetchUsers });
 
   // Notifications Logic
   const { data: notifications } = useCollection<Notification>('notifications', {
@@ -149,11 +158,55 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     });
     await batch.commit();
   };
-  const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products');
-  const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', { constraints: [['orderBy', 'createdAt', 'desc']] });
-  const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions');
+
+  // Products: Fetch on 'products' or 'whatsapp' tab
+  const shouldFetchProducts = activeTab === 'products' || activeTab === 'whatsapp';
+
+  const productConstraints = [
+    ['orderBy', 'name', 'asc'],
+    ['orderBy', 'id', 'asc'],
+    ['limit', PRODUCTS_PER_PAGE],
+    ...(pageIndex > 0 && cursors[pageIndex - 1] ? [['startAfter', ...cursors[pageIndex - 1]]] : [])
+  ];
+
+  const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products', {
+    disabled: !shouldFetchProducts,
+    constraints: productConstraints as any
+  });
+
+  const handleNextPage = () => {
+    if (!products || products.length < PRODUCTS_PER_PAGE) return;
+    const lastProduct = products[products.length - 1];
+    const cursor = [lastProduct.name, lastProduct.id];
+
+    setCursors(prev => {
+      const newCursors = [...prev];
+      newCursors[pageIndex] = cursor;
+      return newCursors;
+    });
+    setPageIndex(prev => prev + 1);
+  };
+
+  const handlePrevPage = () => {
+    if (pageIndex > 0) {
+      setPageIndex(prev => prev - 1);
+    }
+  };
+
+  const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', {
+    constraints: [['orderBy', 'createdAt', 'desc']],
+    disabled: activeTab !== 'orders'
+  });
+
+  const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions', {
+    disabled: activeTab !== 'subscriptions'
+  });
+
   const { data: areas, loading: areasLoading, error: areasError } = useCollection<any>('areas');
-  const { data: coupons, loading: couponsLoading, error: couponsError } = useCollection<Coupon>('coupons');
+
+  const { data: coupons, loading: couponsLoading, error: couponsError } = useCollection<Coupon>('coupons', {
+    disabled: activeTab !== 'coupons'
+  });
 
 
 
@@ -172,6 +225,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCoupon, setEditingCoupon] = useState<Partial<Coupon> | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [extraProducts, setExtraProducts] = useState<Record<string, Product>>({}); // Cache for products not in current page
   const [newUser, setNewUser] = useState(initialUserState);
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -194,6 +248,35 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       setWhatsappMessage(message);
     }
   }, [products, language]);
+
+  useEffect(() => {
+    if (!selectedOrder || !firestore) return;
+
+    const fetchMissingProducts = async () => {
+      const missingIds = selectedOrder.items
+        .map(item => item.productId)
+        .filter(id => !products?.find(p => p.id === id) && !extraProducts[id]);
+
+      if (missingIds.length === 0) return;
+
+      const newProducts: Record<string, Product> = {};
+      await Promise.all(missingIds.map(async (id) => {
+        try {
+            const docRef = doc(firestore, 'products', id);
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                newProducts[id] = { id: snap.id, ...snap.data() } as Product;
+            }
+        } catch (e) {
+            console.error("Failed to fetch product", id);
+        }
+      }));
+
+      setExtraProducts(prev => ({ ...prev, ...newProducts }));
+    };
+
+    fetchMissingProducts();
+  }, [selectedOrder, products, extraProducts, firestore]);
 
 
   const handleEditProduct = (product: Product) => {
@@ -772,7 +855,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           </PopoverContent>
         </Popover>
       </div>
-      <Tabs defaultValue="products" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 h-auto">
           <TabsTrigger value="products">{t('products', language)}</TabsTrigger>
           <TabsTrigger value="orders">{t('orders', language)}</TabsTrigger>
@@ -862,6 +945,30 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   })}
                 </TableBody>
               </Table>
+
+              <div className="flex items-center justify-end space-x-2 py-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevPage}
+                  disabled={pageIndex === 0 || productsLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  {t('previous', language) || 'Previous'}
+                </Button>
+                <div className="text-sm font-medium">
+                  Page {pageIndex + 1}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={!products || products.length < PRODUCTS_PER_PAGE || productsLoading}
+                >
+                  {t('next', language) || 'Next'}
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </>
           )}
         </TabsContent>
@@ -1424,7 +1531,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 <h3 className="font-semibold mb-2">Items</h3>
                 <ul className="space-y-1 text-sm">
                   {selectedOrder.items.map(item => {
-                    const product = products.find(p => p.id === item.productId);
+                    const product = products.find(p => p.id === item.productId) || extraProducts[item.productId];
                     return (
                       <li key={item.productId} className="flex justify-between">
                         <span>{product ? getProductName(product, language) : 'Unknown Item'}</span>

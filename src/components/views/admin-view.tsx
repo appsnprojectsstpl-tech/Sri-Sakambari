@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -75,6 +75,7 @@ import { useLanguage } from '@/context/language-context';
 import { t, getProductName } from '@/lib/translations';
 import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
+import ProductImageGallery from './product-image-gallery';
 
 
 const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
@@ -1425,24 +1426,17 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 </div>
 
                 {/* Image Gallery */}
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {editingProduct && (
-                    ('images' in editingProduct && Array.isArray(editingProduct.images) ? editingProduct.images : (editingProduct.imageUrl ? [editingProduct.imageUrl] : [])).map((url, index) => (
-                      // Performance Optimization: Use URL as key instead of index to prevent unnecessary re-renders when removing images
-                      <div key={url} className="relative aspect-square bg-muted rounded-md overflow-hidden group">
-                        <Image src={url} alt={`Product ${index + 1}`} fill className="object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => removeImage(url)}
-                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Remove Image"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
+                {editingProduct && (
+                  <ProductImageGallery
+                    images={useMemo(() =>
+                      'images' in editingProduct && Array.isArray(editingProduct.images)
+                        ? editingProduct.images
+                        : (editingProduct.imageUrl ? [editingProduct.imageUrl] : []),
+                      [editingProduct]
+                    )}
+                    onRemove={removeImage}
+                  />
+                )}
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox id="isActive" name="isActive" defaultChecked={editingProduct ? ('isActive' in editingProduct ? editingProduct.isActive : true) : true} />

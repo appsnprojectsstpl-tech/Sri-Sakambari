@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   onSnapshot,
   query,
@@ -76,6 +75,38 @@ const convertTimestamps = (data: DocumentData): DocumentData => {
     return newData;
 };
 
+function deepCompare(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return a === b;
+
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepCompare(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (!Object.prototype.hasOwnProperty.call(b, key) || !deepCompare(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+function useDeepCompareMemoize<T>(value: T): T {
+  const ref = useRef<T>(value);
+  if (!deepCompare(value, ref.current)) {
+    ref.current = value;
+  }
+  return ref.current;
+}
 
 export function useCollection<T>(
   collectionName: string,
@@ -92,6 +123,7 @@ export function useCollection<T>(
   }, []);
   
   const { disabled = false } = options;
+  const memoizedConstraints = useDeepCompareMemoize(options.constraints);
 
   useEffect(() => {
     if (!firestore || disabled) {
@@ -104,7 +136,7 @@ export function useCollection<T>(
     try {
         const collectionRef: CollectionReference = collection(firestore, collectionName);
         
-        const queryConstraints: QueryConstraint[] = (options.constraints || []).map(constraint => {
+        const queryConstraints: QueryConstraint[] = (memoizedConstraints || []).map(constraint => {
             const [type, ...args] = constraint;
             switch(type) {
                 case 'where':
@@ -154,7 +186,7 @@ export function useCollection<T>(
         setData([]);
         setLoading(false);
     }
-  }, [firestore, collectionName, JSON.stringify(options.constraints), disabled, refetchIndex]); // Deep comparison for constraints
+  }, [firestore, collectionName, memoizedConstraints, disabled, refetchIndex]); // Deep comparison for constraints
 
   return { data, loading, error, forceRefetch };
 }

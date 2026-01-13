@@ -62,6 +62,10 @@ export interface OrderItem {
   priceAtOrder: number;
   isCut: boolean;
   cutCharge: number;
+  // Denormalized fields for performance
+  name?: string;
+  name_te?: string;
+  unit?: string;
 }
 
 export interface Order {

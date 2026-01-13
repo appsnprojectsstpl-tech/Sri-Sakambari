@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useCollection } from '@/firebase';
 import { doc, setDoc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, addDoc } from 'firebase/firestore';
 import type { CartItem, Area, Order, Product } from '@/lib/types';
-import { ShoppingCart, Trash2, MessageSquare, Printer } from 'lucide-react';
+import { ShoppingCart, Trash2, MessageSquare, Printer, Scissors } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Separator } from './ui/separator';
 import { settings } from '@/lib/settings';
@@ -52,7 +52,6 @@ export default function CartSheet({
   const router = useRouter();
   const { language } = useLanguage();
   const { data: areas } = useCollection<Area>('areas');
-  const { data: products } = useCollection<Product>('products');
   const [isCheckoutOpen, setCheckoutOpen] = useState(false);
   const [isOrderSuccessOpen, setOrderSuccessOpen] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -60,6 +59,7 @@ export default function CartSheet({
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [whatsappUrl, setWhatsappUrl] = useState('');
   const [lastPlacedOrder, setLastPlacedOrder] = useState<Order | null>(null);
+  const [lastPlacedOrderProducts, setLastPlacedOrderProducts] = useState<Product[]>([]);
 
   const [deliveryInfo, setDeliveryInfo] = useState({
     name: '',
@@ -182,6 +182,7 @@ export default function CartSheet({
 
       await setDoc(orderRef, newOrderData);
       setLastPlacedOrder(newOrderData);
+      setLastPlacedOrderProducts(cart.map(item => item.product));
 
       // Notify Admins
       try {
@@ -248,8 +249,8 @@ export default function CartSheet({
   }
 
   const handlePrintOrder = () => {
-    if (lastPlacedOrder && products) {
-      generateSalesOrderPDF(lastPlacedOrder, products, language);
+    if (lastPlacedOrder && lastPlacedOrderProducts.length > 0) {
+      generateSalesOrderPDF(lastPlacedOrder, lastPlacedOrderProducts, language);
     } else {
       toast({
         variant: "destructive",

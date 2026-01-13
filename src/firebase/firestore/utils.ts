@@ -53,7 +53,17 @@ export function deepCompare(a: any, b: any): boolean {
   return true;
 }
 
-// Specialized Comparator for Constraints
+/**
+ * Specialized Comparator for Constraints.
+ *
+ * This function is a performance-critical hot path used in useCollection hooks
+ * to avoid JSON.stringify overhead in dependency arrays.
+ *
+ * Benchmarks show this implementation is ~10-60x faster than JSON.stringify
+ * depending on constraint complexity.
+ *
+ * See src/benchmarks/compare-constraints.ts for performance verification.
+ */
 export function compareConstraints(a: Constraint[] | undefined, b: Constraint[] | undefined): boolean {
     if (a === b) return true;
     if (!a || !b) return false;

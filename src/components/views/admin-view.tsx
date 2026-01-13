@@ -57,10 +57,10 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 import Image from 'next/image';
-import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
+import { useAuth, useFirestore, createUser, useCollection, createNotification, usePaginatedCollection } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, orderBy, query } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -150,7 +150,19 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     await batch.commit();
   };
   const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products');
-  const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', { constraints: [['orderBy', 'createdAt', 'desc']] });
+  const {
+    data: orders,
+    loading: ordersLoading,
+    error: ordersError,
+    nextPage: nextOrderPage,
+    prevPage: prevOrderPage,
+    page: currentOrderPage,
+    hasNextPage: hasNextOrderPage,
+    hasPrevPage: hasPrevOrderPage
+  } = usePaginatedCollection<Order>('orders', {
+    constraints: [['orderBy', 'createdAt', 'desc']],
+    pageSize: 15
+  });
   const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions');
   const { data: areas, loading: areasLoading, error: areasError } = useCollection<any>('areas');
   const { data: coupons, loading: couponsLoading, error: couponsError } = useCollection<Coupon>('coupons');
@@ -709,15 +721,37 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     });
   };
 
-  const handleExportClick = () => {
-    if (orders && users) {
-      exportOrdersToExcel(orders, users);
-    } else {
+  const handleExportClick = async () => {
+    if (!firestore || !users) return;
+
+    setLoading(true);
+    try {
+      // Fetch all orders for export
+      const ordersRef = collection(firestore, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+
+      const allOrders: Order[] = [];
+      snapshot.forEach(doc => {
+        // We need to convert timestamps similar to the hook
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+        allOrders.push({ ...data, id: doc.id, createdAt } as Order);
+      });
+
+      exportOrdersToExcel(allOrders, users);
+      toast({
+        title: 'Export Complete',
+        description: `Exported ${allOrders.length} orders to Excel.`,
+      });
+    } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'Order or user data is not available yet.',
+        description: error.message,
       });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -867,13 +901,22 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </TabsContent>
 
         <TabsContent value="orders">
-          <div className="flex justify-end my-4">
-            <Button onClick={handleExportClick} disabled={ordersLoading || !orders || orders.length === 0}>
+          <div className="flex justify-between my-4 items-center">
+             <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold">Order History</h3>
+                {ordersError && <span className="text-destructive text-sm">{ordersError.message}</span>}
+             </div>
+             <Button onClick={handleExportClick} disabled={loading || !users} variant="outline">
               <Download className="mr-2 h-4 w-4" />
-              Export to Excel
+              {loading ? 'Exporting...' : 'Export All to Excel'}
             </Button>
           </div>
-          {ordersLoading ? <p>Loading orders...</p> : (
+
+          {ordersLoading ? (
+             <div className="py-12 flex justify-center items-center">
+                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+             </div>
+          ) : (
             <>
               <div className="md:hidden space-y-4 mt-4">
                 {(orders || []).map((order) => {
@@ -958,6 +1001,31 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   })}
                 </TableBody>
               </Table>
+
+              {/* Pagination Controls */}
+              <div className="flex items-center justify-between space-x-2 py-4">
+                <div className="text-sm text-muted-foreground">
+                    Page {currentOrderPage}
+                </div>
+                <div className="space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={prevOrderPage}
+                    disabled={!hasPrevOrderPage || ordersLoading}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={nextOrderPage}
+                    disabled={!hasNextOrderPage || ordersLoading}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </>
           )}
         </TabsContent>

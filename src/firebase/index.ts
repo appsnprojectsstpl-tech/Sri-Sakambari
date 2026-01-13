@@ -13,6 +13,7 @@ export { useFirebaseApp, useAuth, useFirestore, useMemoFirebase } from './provid
 export { useUser } from './auth/use-user';
 export { useDoc } from './firestore/use-doc';
 export { useCollection } from './firestore/use-collection';
+export { usePaginatedCollection } from './firestore/use-paginated-collection';
 
 
 function initializeFirebase() {

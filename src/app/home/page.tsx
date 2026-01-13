@@ -40,9 +40,11 @@ export default function VisitingCardPage() {
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 sm:gap-0">
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <Link href="/dashboard" className='flex items-center gap-2'>
-            <img
+            <Image
               src="https://image2url.com/images/1765782592895-e331e0be-b91b-499e-abc2-ad62b01b50c3.png"
               alt="Sri Sakambari Devi Logo"
+              width={64}
+              height={64}
               className="w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 border-white shadow-lg"
             />
             <h1 className="text-xl sm:text-3xl font-bold font-headline leading-tight text-[#FF0000]" style={{ fontFamily: "'Poppins', sans-serif" }}>

@@ -46,6 +46,7 @@ export default function VisitingCardPage() {
               width={64}
               height={64}
               className="w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 border-white shadow-lg"
+              priority
             />
             <h1 className="text-xl sm:text-3xl font-bold font-headline leading-tight text-[#FF0000]" style={{ fontFamily: "'Poppins', sans-serif" }}>
               Sri Sakambari Devi<br />{t('vegetableMarket', language)}

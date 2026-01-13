@@ -8,6 +8,7 @@ import { Phone, MapPin, CheckCircle, Truck, Image as ImageIcon } from "lucide-re
 import { Separator } from "../ui/separator";
 import { useCollection, useFirestore, useAuth, createNotification } from '@/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { useUsersByIds } from '@/hooks/use-users-by-ids';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -22,11 +23,20 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const { toast } = useToast();
     const { language } = useLanguage();
 
-    const { data: users, loading: usersLoading } = useCollection<User>('users');
     const { data: products, loading: productsLoading } = useCollection<Product>('products');
     const { data: assignedOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: [['where', 'deliveryPartnerId', '==', auth?.currentUser?.uid || '']]
     });
+
+    // Admins need to be fetched for notifications
+    const { data: admins } = useCollection<User>('users', {
+        constraints: [['where', 'role', '==', 'admin']]
+    });
+
+    // Efficiently fetch only the users associated with assigned orders
+    const userIds = assignedOrders?.map(o => o.customerId) || [];
+    const { users, loading: usersLoading } = useUsersByIds(userIds);
+
     const { data: notifications, loading: notificationsLoading } = useCollection<Notification>('notifications', {
         constraints: [['where', 'userId', '==', auth?.currentUser?.uid || '']]
     });
@@ -67,7 +77,6 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
 
             await setDoc(orderRef, updateData, { merge: true });
 
-            const admins = users?.filter(u => u.role === 'admin');
             if (admins) {
                 for (const admin of admins) {
                     await createNotification(
@@ -113,13 +122,18 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                         <Accordion type="single" collapsible className="w-full space-y-4 mt-6">
                             {inProgressOrders.map(order => {
                                 const user = users?.find(u => u.id === order.customerId);
-                                if (!user) return null;
+                                // Fallback to order data if user is missing (e.g. slight delay) or future proofing
+                                const displayName = user?.name || order.name || 'Unknown User';
+                                const displayPhone = user?.phone || order.phone;
+                                const displayAddress = user?.address || order.address;
+                                const displayLandmark = order.landmark || user?.landmark;
+
                                 return (
                                     <AccordionItem key={order.id} value={order.id} className="border rounded-lg bg-card">
                                         <AccordionTrigger className="px-4 md:px-6 hover:no-underline">
                                             <div className="flex justify-between w-full items-center">
                                                 <div className="text-left">
-                                                    <p className="font-semibold">{user.name}</p>
+                                                    <p className="font-semibold">{displayName}</p>
                                                     <p className="text-sm text-muted-foreground">#{order.id}</p>
                                                 </div>
                                                 <Badge variant={order.status === 'OUT_FOR_DELIVERY' ? 'default' : 'outline'}>{order.status}</Badge>
@@ -129,12 +143,12 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                                             <div className="space-y-4">
                                                 <div>
                                                     <h4 className="font-semibold flex items-center gap-2"><MapPin className="h-4 w-4 text-muted-foreground" /> {t('address', language)}</h4>
-                                                    <p className="text-muted-foreground text-sm pl-6">{user.address}, {order.area}, {user.landmark}</p>
+                                                    <p className="text-muted-foreground text-sm pl-6">{displayAddress}, {order.area}{displayLandmark ? `, ${displayLandmark}` : ''}</p>
                                                 </div>
                                                 <div className="flex items-center gap-4">
                                                     <h4 className="font-semibold flex items-center gap-2"><Phone className="h-4 w-4 text-muted-foreground" /> {t('contact', language)}</h4>
                                                     <Button asChild variant="link" className="p-0 h-auto">
-                                                        <a href={`tel:${user.phone}`}>{user.phone}</a>
+                                                        <a href={`tel:${displayPhone}`}>{displayPhone}</a>
                                                     </Button>
                                                 </div>
                                                 <Separator />
@@ -186,10 +200,11 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                         <div className="space-y-4 mt-6">
                             {completedOrders.map(order => {
                                 const user = users?.find(u => u.id === order.customerId);
+                                const displayName = user?.name || order.name || "Unknown User";
                                 return (
                                     <div key={order.id} className="p-4 border rounded-lg bg-card/50 flex justify-between items-center">
                                         <div>
-                                            <p className="font-semibold">{user?.name || "Unknown User"}</p>
+                                            <p className="font-semibold">{displayName}</p>
                                             <p className="text-sm text-muted-foreground">#{order.id}</p>
                                             {order.deliveryPhotoUrl && (
                                                 <Button variant="link" size="sm" className="h-auto p-0 mt-1" onClick={() => handleViewPhoto(order)}>

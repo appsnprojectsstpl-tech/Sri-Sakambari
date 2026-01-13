@@ -13,6 +13,8 @@ export { useFirebaseApp, useAuth, useFirestore, useMemoFirebase } from './provid
 export { useUser } from './auth/use-user';
 export { useDoc } from './firestore/use-doc';
 export { useCollection } from './firestore/use-collection';
+export { useInfiniteCollection } from './firestore/use-infinite-collection';
+export { fetchCollection } from './firestore/fetch-collection';
 
 
 function initializeFirebase() {

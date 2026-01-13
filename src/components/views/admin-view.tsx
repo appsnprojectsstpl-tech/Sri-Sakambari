@@ -57,7 +57,7 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 import Image from 'next/image';
-import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
+import { useAuth, useFirestore, createUser, useCollection, createNotification, useInfiniteCollection, fetchCollection } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
 import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
@@ -150,7 +150,18 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     await batch.commit();
   };
   const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products');
-  const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', { constraints: [['orderBy', 'createdAt', 'desc']] });
+  const {
+    data: orders,
+    loading: ordersLoading,
+    isFetchingMore: ordersFetchingMore,
+    error: ordersError,
+    loadMore: loadMoreOrders,
+    hasMore: hasMoreOrders
+  } = useInfiniteCollection<Order>('orders', {
+    constraints: [['orderBy', 'createdAt', 'desc']],
+    initialLimit: 20,
+    batchSize: 20
+  });
   const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions');
   const { data: areas, loading: areasLoading, error: areasError } = useCollection<any>('areas');
   const { data: coupons, loading: couponsLoading, error: couponsError } = useCollection<Coupon>('coupons');
@@ -177,6 +188,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const deliveryStaff = users?.filter(u => u.role === 'delivery') || [];
 
@@ -709,15 +721,20 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     });
   };
 
-  const handleExportClick = () => {
-    if (orders && users) {
-      exportOrdersToExcel(orders, users);
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Export Failed',
-        description: 'Order or user data is not available yet.',
-      });
+  const handleExportClick = async () => {
+    if (!firestore) return;
+    setExporting(true);
+    try {
+      // Fetch all orders and users fresh for export
+      const allOrders = await fetchCollection<Order>(firestore, 'orders', [['orderBy', 'createdAt', 'desc']]);
+      const allUsers = await fetchCollection<User>(firestore, 'users');
+
+      exportOrdersToExcel(allOrders, allUsers);
+      toast({ title: 'Export Complete', description: `Exported ${allOrders.length} orders.` });
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Export Failed', description: e.message });
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -868,9 +885,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
         <TabsContent value="orders">
           <div className="flex justify-end my-4">
-            <Button onClick={handleExportClick} disabled={ordersLoading || !orders || orders.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Export to Excel
+            <Button onClick={handleExportClick} disabled={ordersLoading || exporting}>
+              {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              {exporting ? 'Exporting...' : 'Export to Excel'}
             </Button>
           </div>
           {ordersLoading ? <p>Loading orders...</p> : (
@@ -958,6 +975,14 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   })}
                 </TableBody>
               </Table>
+              {hasMoreOrders && (
+                <div className="flex justify-center mt-4 mb-8">
+                  <Button variant="outline" onClick={loadMoreOrders} disabled={ordersFetchingMore}>
+                    {ordersFetchingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Load More Orders
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </TabsContent>

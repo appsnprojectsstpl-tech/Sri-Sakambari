@@ -96,6 +96,7 @@ export interface Subscription {
   planName: string;
   items: { productId: string; qty: number }[];
   frequency: 'DAILY' | 'ALTERNATE' | 'WEEKEND' | 'CUSTOM';
+  customDays?: number[]; // 0=Sunday, 1=Monday, ..., 6=Saturday
   area: string;
   deliverySlot: string;
   startDate: Date;

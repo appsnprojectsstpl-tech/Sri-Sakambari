@@ -15,6 +15,7 @@ import { useLanguage } from '@/context/language-context';
 import { t, getProductName } from '@/lib/translations';
 import PhotoUpload from '@/components/photo-upload';
 import Image from 'next/image';
+import { useUsersByIds } from '@/hooks/use-users-by-ids';
 
 export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const firestore = useFirestore();
@@ -22,10 +23,19 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const { toast } = useToast();
     const { language } = useLanguage();
 
-    const { data: users, loading: usersLoading } = useCollection<User>('users');
     const { data: assignedOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: [['where', 'deliveryPartnerId', '==', auth?.currentUser?.uid || '']]
     });
+
+    // OPTIMIZATION: Fetch only admins for notifications
+    const { data: admins } = useCollection<User>('users', {
+        constraints: [['where', 'role', '==', 'admin']]
+    });
+
+    // OPTIMIZATION: Fetch only relevant customers for display
+    const customerIds = assignedOrders?.map(o => o.customerId).filter((id): id is string => !!id) || [];
+    const { data: customers, loading: customersLoading } = useUsersByIds(customerIds);
+
     const { data: notifications, loading: notificationsLoading } = useCollection<Notification>('notifications', {
         constraints: [['where', 'userId', '==', auth?.currentUser?.uid || '']]
     });
@@ -66,7 +76,6 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
 
             await setDoc(orderRef, updateData, { merge: true });
 
-            const admins = users?.filter(u => u.role === 'admin');
             if (admins) {
                 for (const admin of admins) {
                     await createNotification(
@@ -91,7 +100,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
         }
     };
 
-    if (ordersLoading || usersLoading || notificationsLoading) {
+    if (ordersLoading || notificationsLoading) {
         return <div className="container mx-auto px-4 py-8"><p>Loading deliveries...</p></div>
     }
 
@@ -111,8 +120,9 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                     {inProgressOrders && inProgressOrders.length > 0 ? (
                         <Accordion type="single" collapsible className="w-full space-y-4 mt-6">
                             {inProgressOrders.map(order => {
-                                const user = users?.find(u => u.id === order.customerId);
-                                if (!user) return null;
+                                const user = customers?.find(u => u.id === order.customerId);
+                                if (!user && customersLoading) return <div key={order.id} className="p-4">Loading user...</div>;
+                                if (!user) return null; // Or show "Unknown User"
                                 return (
                                     <AccordionItem key={order.id} value={order.id} className="border rounded-lg bg-card">
                                         <AccordionTrigger className="px-4 md:px-6 hover:no-underline">
@@ -184,7 +194,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                     {completedOrders && completedOrders.length > 0 ? (
                         <div className="space-y-4 mt-6">
                             {completedOrders.map(order => {
-                                const user = users?.find(u => u.id === order.customerId);
+                                const user = customers?.find(u => u.id === order.customerId);
                                 return (
                                     <div key={order.id} className="p-4 border rounded-lg bg-card/50 flex justify-between items-center">
                                         <div>

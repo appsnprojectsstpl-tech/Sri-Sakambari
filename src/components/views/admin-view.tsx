@@ -61,7 +61,7 @@ import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -193,10 +193,40 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
+  // Orders Pagination
+  const ORDERS_PER_PAGE = 20;
+  const [ordersPageIndex, setOrdersPageIndex] = useState(0);
+  const [ordersCursors, setOrdersCursors] = useState<any[][]>([]);
+
+  const orderConstraints = [
+    ['orderBy', 'createdAt', 'desc'],
+    ['limit', ORDERS_PER_PAGE],
+    ...(ordersPageIndex > 0 && ordersCursors[ordersPageIndex - 1] ? [['startAfter', ...ordersCursors[ordersPageIndex - 1]]] : [])
+  ];
+
   const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', {
-    constraints: [['orderBy', 'createdAt', 'desc']],
+    constraints: orderConstraints as any,
     disabled: activeTab !== 'orders'
   });
+
+  const handleNextPageOrders = () => {
+    if (!orders || orders.length < ORDERS_PER_PAGE) return;
+    const lastOrder = orders[orders.length - 1];
+    const cursor = [lastOrder.createdAt]; // Assuming createdAt is unique enough or we might need a secondary sort field like ID
+
+    setOrdersCursors(prev => {
+      const newCursors = [...prev];
+      newCursors[ordersPageIndex] = cursor;
+      return newCursors;
+    });
+    setOrdersPageIndex(prev => prev + 1);
+  };
+
+  const handlePrevPageOrders = () => {
+    if (ordersPageIndex > 0) {
+      setOrdersPageIndex(prev => prev - 1);
+    }
+  };
 
   const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions', {
     disabled: activeTab !== 'subscriptions'
@@ -804,27 +834,55 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     });
   };
 
-  const handleExportClick = () => {
-    if (orders && users) {
-      exportOrdersToExcel(orders, users);
-    } else {
+  const handleExportClick = async () => {
+    if (!firestore || !users) {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'Order or user data is not available yet.',
+        description: 'User data or database connection not available.',
       });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Fetch all orders for export, bypassing pagination
+      const ordersRef = collection(firestore, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+
+      exportOrdersToExcel(allOrders, users);
+      toast({
+        title: 'Export Successful',
+        description: `Exported ${allOrders.length} orders.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Export Failed',
+        description: error.message,
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleMigrateOrders = async () => {
-    if (!firestore || !orders || !products) return;
+    if (!firestore || !products) return;
     setLoading(true);
 
     try {
+      // Fetch all orders for migration
+      const ordersRef = collection(firestore, 'orders');
+      const q = query(ordersRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+
       // Chunk updates to respect Firestore batch limit of 500
       const updates: { ref: any, data: any }[] = [];
 
-      orders.forEach(order => {
+      allOrders.forEach(order => {
         let orderUpdated = false;
         const updatedItems = order.items.map(item => {
           // If item already has name, skip
@@ -885,7 +943,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     } finally {
       setLoading(false);
       setMigrateDialogOpen(false);
-      // Ideally force refetch orders here
+      // We don't need to force refetch orders strictly if we just updated denormalized fields,
+      // but if the UI displayed them, we might. Since we are in paginated mode,
+      // the real-time listener *should* pick up changes for the currently visible page automatically.
     }
   };
 
@@ -1153,6 +1213,30 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   })}
                 </TableBody>
               </Table>
+
+              <div className="flex items-center justify-end space-x-2 py-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevPageOrders}
+                  disabled={ordersPageIndex === 0 || ordersLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  {t('previous', language) || 'Previous'}
+                </Button>
+                <div className="text-sm font-medium">
+                  Page {ordersPageIndex + 1}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNextPageOrders}
+                  disabled={!orders || orders.length < ORDERS_PER_PAGE || ordersLoading}
+                >
+                  {t('next', language) || 'Next'}
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </>
           )}
         </TabsContent>

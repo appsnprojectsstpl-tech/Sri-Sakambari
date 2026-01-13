@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useCollection } from '@/firebase';
-import { doc, setDoc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import type { CartItem, Area, Order, Product } from '@/lib/types';
 import { ShoppingCart, Trash2, MessageSquare, Printer, Scissors } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
@@ -193,8 +193,10 @@ export default function CartSheet({
         const adminIds = adminsSnapshot.docs.map(d => d.id);
 
         // Create notification for each admin
-        const notifPromises = adminIds.map(adminId =>
-          addDoc(collection(firestore, 'notifications'), {
+        const batch = writeBatch(firestore);
+        adminIds.forEach(adminId => {
+          const notifRef = doc(collection(firestore, 'notifications'));
+          batch.set(notifRef, {
             userId: adminId,
             title: 'New Order Received',
             message: `Order #${newOrderId} placed by ${user.name} for ₹${finalTotal}`,
@@ -202,9 +204,9 @@ export default function CartSheet({
             createdAt: serverTimestamp(),
             type: 'order',
             linkId: newOrderId
-          })
-        );
-        await Promise.all(notifPromises);
+          });
+        });
+        await batch.commit();
       } catch (err) {
         console.error("Failed to notify admins", err);
         // Don't block success flow

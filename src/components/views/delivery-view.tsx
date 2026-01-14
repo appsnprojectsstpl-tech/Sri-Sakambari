@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { useLanguage } from '@/context/language-context';
 import { t, getProductName } from '@/lib/translations';
 import PhotoUpload from '@/components/photo-upload';
 import Image from 'next/image';
+import { useUsersByIds } from '@/hooks/use-users-by-ids';
 
 export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const firestore = useFirestore();
@@ -22,13 +23,23 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const { toast } = useToast();
     const { language } = useLanguage();
 
-    const { data: users, loading: usersLoading } = useCollection<User>('users');
     const { data: assignedOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: [['where', 'deliveryPartnerId', '==', auth?.currentUser?.uid || '']]
     });
+
     const { data: notifications, loading: notificationsLoading } = useCollection<Notification>('notifications', {
         constraints: [['where', 'userId', '==', auth?.currentUser?.uid || '']]
     });
+
+    const { data: adminUsers, loading: adminsLoading } = useCollection<User>('users', {
+        constraints: [['where', 'role', '==', 'admin']]
+    });
+
+    const customerIds = useMemo(() => {
+        return assignedOrders?.map(order => order.customerId) || [];
+    }, [assignedOrders]);
+
+    const { data: customers, loading: customersLoading } = useUsersByIds(customerIds);
 
     const [isPhotoUploadOpen, setPhotoUploadOpen] = useState(false);
     const [isViewPhotoOpen, setViewPhotoOpen] = useState(false);
@@ -66,7 +77,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
 
             await setDoc(orderRef, updateData, { merge: true });
 
-            const admins = users?.filter(u => u.role === 'admin');
+            const admins = adminUsers;
             if (admins) {
                 for (const admin of admins) {
                     await createNotification(
@@ -91,7 +102,9 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
         }
     };
 
-    if (ordersLoading || usersLoading || notificationsLoading) {
+    const loading = ordersLoading || notificationsLoading || customersLoading || adminsLoading;
+
+    if (loading) {
         return <div className="container mx-auto px-4 py-8"><p>Loading deliveries...</p></div>
     }
 
@@ -111,7 +124,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                     {inProgressOrders && inProgressOrders.length > 0 ? (
                         <Accordion type="single" collapsible className="w-full space-y-4 mt-6">
                             {inProgressOrders.map(order => {
-                                const user = users?.find(u => u.id === order.customerId);
+                                const user = customers?.find(u => u.id === order.customerId);
                                 if (!user) return null;
                                 return (
                                     <AccordionItem key={order.id} value={order.id} className="border rounded-lg bg-card">
@@ -184,7 +197,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
                     {completedOrders && completedOrders.length > 0 ? (
                         <div className="space-y-4 mt-6">
                             {completedOrders.map(order => {
-                                const user = users?.find(u => u.id === order.customerId);
+                                const user = customers?.find(u => u.id === order.customerId);
                                 return (
                                     <div key={order.id} className="p-4 border rounded-lg bg-card/50 flex justify-between items-center">
                                         <div>

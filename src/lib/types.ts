@@ -71,6 +71,7 @@ export interface Order {
   phone: string; // From sales order form
   address: string; // From sales order form
   deliveryPlace: string; // From sales order form
+  landmark?: string; // Captured at order time
   deliveryPartnerId?: string;
   items: OrderItem[];
   totalAmount: number;

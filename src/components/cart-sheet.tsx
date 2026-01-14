@@ -67,7 +67,8 @@ export default function CartSheet({
     address: '',
     deliveryPlace: '',
     area: '',
-    slot: ''
+    slot: '',
+    landmark: ''
   });
 
   const [useDifferentDelivery, setUseDifferentDelivery] = useState(false);
@@ -80,7 +81,8 @@ export default function CartSheet({
         address: user.address || '',
         deliveryPlace: user.address || '',
         area: user.area || '',
-        slot: ''
+        slot: '',
+        landmark: user.landmark || ''
       });
     }
   }, [user]);
@@ -162,6 +164,7 @@ export default function CartSheet({
         phone: deliveryInfo.phone,
         address: deliveryInfo.address,
         deliveryPlace: useDifferentDelivery ? deliveryInfo.deliveryPlace : deliveryInfo.address,
+        landmark: deliveryInfo.landmark, // Save landmark to order
         items: cart.map(item => ({
           productId: item.product.id,
           qty: item.quantity,
@@ -305,7 +308,7 @@ export default function CartSheet({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-sm line-clamp-1">{getProductName(item.product, language)}</h4>
-                          {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1"><Scissors className="h-3 w-3" />Cut</Badge>}
+                          {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1">Cut</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground font-sans">
                           ₹{item.product.pricePerUnit}
@@ -369,7 +372,7 @@ export default function CartSheet({
                     <div className="flex-1">
                       <div className="font-medium flex items-center gap-2">
                         {getProductName(item.product, language)}
-                        {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-xs"><Scissors className="h-3 w-3" />Cut</Badge>}
+                        {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-xs">Cut</Badge>}
                       </div>
                       <p className="text-muted-foreground font-sans">&#8377;{item.product.pricePerUnit} / {item.product.unit}</p>
                     </div>
@@ -445,6 +448,16 @@ export default function CartSheet({
                 )}
 
                 <div className="grid grid-cols-1 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="landmark">Landmark (Optional)</Label>
+                    <Input
+                      id="landmark"
+                      className="text-base h-11"
+                      value={deliveryInfo.landmark}
+                      placeholder="Nearby landmark"
+                      onChange={e => setDeliveryInfo({ ...deliveryInfo, landmark: e.target.value })}
+                    />
+                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="area">{t('area', language)}</Label>
                     <Select onValueChange={value => setDeliveryInfo({ ...deliveryInfo, area: value, slot: '' })} value={deliveryInfo.area} required>

@@ -61,7 +61,7 @@ import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter, where, documentId } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -302,15 +302,23 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       if (missingIds.length === 0) return;
 
       const newProducts: Record<string, Product> = {};
-      await Promise.all(missingIds.map(async (id) => {
+
+      // Batch requests in chunks of 10 to avoid N+1 and connection limits
+      const CHUNK_SIZE = 10;
+      const chunks = [];
+      for (let i = 0; i < missingIds.length; i += CHUNK_SIZE) {
+        chunks.push(missingIds.slice(i, i + CHUNK_SIZE));
+      }
+
+      await Promise.all(chunks.map(async (chunk) => {
         try {
-            const docRef = doc(firestore, 'products', id);
-            const snap = await getDoc(docRef);
-            if (snap.exists()) {
-                newProducts[id] = { id: snap.id, ...snap.data() } as Product;
-            }
+          const q = query(collection(firestore, 'products'), where(documentId(), 'in', chunk));
+          const snapshot = await getDocs(q);
+          snapshot.docs.forEach(doc => {
+            newProducts[doc.id] = { id: doc.id, ...doc.data() } as Product;
+          });
         } catch (e) {
-            console.error("Failed to fetch product", id);
+          console.error("Failed to fetch product chunk", chunk, e);
         }
       }));
 

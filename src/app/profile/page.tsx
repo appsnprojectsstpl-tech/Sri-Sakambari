@@ -14,7 +14,8 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
 import { signOut } from 'firebase/auth';
 import dynamic from 'next/dynamic';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, query, collection, where, documentId, getDocs } from 'firebase/firestore';
+import { chunkArray } from '@/firebase/firestore/utils';
 
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
 
@@ -61,11 +62,13 @@ export default function ProfilePage() {
         const fetchedProducts: Product[] = [];
 
         try {
-            await Promise.all(itemIds.map(async (id) => {
-                const productDoc = await getDoc(doc(firestore, 'products', id));
-                if (productDoc.exists()) {
-                    fetchedProducts.push({ id: productDoc.id, ...productDoc.data() } as Product);
-                }
+            const chunks = chunkArray(itemIds, 30);
+            await Promise.all(chunks.map(async (chunkIds) => {
+                const q = query(collection(firestore, 'products'), where(documentId(), 'in', chunkIds));
+                const snapshot = await getDocs(q);
+                snapshot.docs.forEach(doc => {
+                    fetchedProducts.push({ id: doc.id, ...doc.data() } as Product);
+                });
             }));
         } catch (error) {
             console.error("Error fetching products for repeat order:", error);

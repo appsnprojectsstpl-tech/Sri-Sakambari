@@ -61,7 +61,8 @@ import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter, where } from 'firebase/firestore';
+import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -886,11 +887,17 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
     setLoading(true);
     try {
-      // Fetch all orders for export, bypassing pagination
+      // Fetch all orders for export, bypassing pagination using chunked fetch
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
-      const snapshot = await getDocs(q);
-      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+
+      const allOrders = await fetchAllDocsInBatches<Order>(q, 500, (count) => {
+        toast({
+          title: 'Exporting...',
+          description: `Fetched ${count} orders so far...`,
+          duration: 1000,
+        });
+      });
 
       exportOrdersToExcel(allOrders, users);
       toast({
@@ -920,11 +927,17 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         productMap.set(doc.id, { id: doc.id, ...doc.data() } as Product);
       });
 
-      // 2. Fetch all orders for migration
+      // 2. Fetch all orders for migration using chunked fetch
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
-      const snapshot = await getDocs(q);
-      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+
+      const allOrders = await fetchAllDocsInBatches<Order>(q, 500, (count) => {
+         toast({
+          title: 'Migrating...',
+          description: `Scanning ${count} orders...`,
+          duration: 1000,
+        });
+      });
 
       // 3. Chunk updates to respect Firestore batch limit of 500
       const updates: { ref: any, data: any }[] = [];

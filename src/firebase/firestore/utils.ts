@@ -1,4 +1,13 @@
-import { Timestamp } from 'firebase/firestore';
+import {
+  Timestamp,
+  getDocs,
+  query,
+  limit,
+  startAfter,
+  Query,
+  DocumentData,
+  QuerySnapshot
+} from 'firebase/firestore';
 
 export type WhereFilterOp =
   | '<'
@@ -106,4 +115,54 @@ export function compareConstraints(a: Constraint[] | undefined, b: Constraint[] 
         }
     }
     return true;
+}
+
+/**
+ * Fetches all documents from a query in batches to avoid Firestore limits and timeouts.
+ *
+ * @param baseQuery The base query to execute (e.g., collection reference or query with filters).
+ *                  IMPORTANT: The query MUST be ordered by a unique field (or set of fields)
+ *                  consistent with the cursor strategy. Ideally, order by 'id' or 'createdAt'.
+ * @param batchSize The number of documents to fetch per batch (default: 500).
+ * @param onProgress Optional callback to report the total number of documents fetched so far.
+ * @returns A promise resolving to an array of all documents (with IDs merged).
+ */
+export async function fetchAllDocsInBatches<T = DocumentData>(
+  baseQuery: Query<T>,
+  batchSize: number = 500,
+  onProgress?: (count: number) => void
+): Promise<(T & { id: string })[]> {
+  let allDocs: (T & { id: string })[] = [];
+  let lastDoc: any = null;
+  let hasMore = true;
+
+  while (hasMore) {
+    const constraints: any[] = [limit(batchSize)];
+    if (lastDoc) {
+      constraints.push(startAfter(lastDoc));
+    }
+
+    const q = query(baseQuery, ...constraints);
+    const snapshot: QuerySnapshot<T> = await getDocs(q);
+
+    // Process current batch
+    const docs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as T & { id: string }));
+
+    allDocs.push(...docs);
+
+    if (onProgress) {
+      onProgress(allDocs.length);
+    }
+
+    if (snapshot.docs.length < batchSize) {
+      hasMore = false;
+    } else {
+      lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    }
+  }
+
+  return allDocs;
 }

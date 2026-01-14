@@ -482,7 +482,7 @@ export default function CartSheet({
             <div className="space-y-4 pb-4">
               <h4 className="font-semibold">Terms & Conditions</h4>
               <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1 pl-2">
-                {termsAndConditions.map((term, index) => <li key={index}>{term}</li>)}
+                {termsAndConditions.map((term) => <li key={term}>{term}</li>)}
               </ul>
               <div className="flex items-start space-x-3 pt-2">
                 <Checkbox id="terms" className="h-5 w-5 mt-0.5" checked={agreedToTerms} onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)} />

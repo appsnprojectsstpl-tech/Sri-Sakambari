@@ -1,4 +1,3 @@
-
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { useUser, useCollection, useFirestore, useAuth } from '@/firebase';
@@ -14,8 +13,7 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
 import { signOut } from 'firebase/auth';
 import dynamic from 'next/dynamic';
-import { doc, getDoc, query, collection, where, documentId, getDocs } from 'firebase/firestore';
-import { chunkArray } from '@/firebase/firestore/utils';
+import { fetchDocsByIds } from '@/firebase/firestore/utils';
 
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
 
@@ -58,18 +56,11 @@ export default function ProfilePage() {
         if (!firestore) return;
 
         // Fetch products on demand
-        const itemIds = Array.from(new Set(order.items.map(item => item.productId)));
-        const fetchedProducts: Product[] = [];
+        const itemIds = order.items.map(item => item.productId);
+        let fetchedProducts: Product[] = [];
 
         try {
-            const chunks = chunkArray(itemIds, 30);
-            await Promise.all(chunks.map(async (chunkIds) => {
-                const q = query(collection(firestore, 'products'), where(documentId(), 'in', chunkIds));
-                const snapshot = await getDocs(q);
-                snapshot.docs.forEach(doc => {
-                    fetchedProducts.push({ id: doc.id, ...doc.data() } as Product);
-                });
-            }));
+            fetchedProducts = (await fetchDocsByIds(firestore, 'products', itemIds)) as Product[];
         } catch (error) {
             console.error("Error fetching products for repeat order:", error);
             toast({
@@ -80,24 +71,25 @@ export default function ProfilePage() {
             return;
         }
 
-        const products = fetchedProducts;
+        // OPTIMIZATION: Use Map for O(1) access
+        const productMap = new Map(fetchedProducts.map(p => [p.id, p]));
         const unavailableItems: string[] = [];
         const itemsToProcess: CartItem[] = [];
 
         order.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId && p.isActive);
-            if (product) {
+            const product = productMap.get(item.productId);
+
+            if (product && product.isActive) {
                 itemsToProcess.push({
                     product,
                     quantity: item.qty,
                     isCut: item.isCut || false
                 });
             } else {
-                // Try to find the product even if inactive to get the name
-                const unavailableProduct = products.find(p => p.id === item.productId);
+                // Product is missing or inactive
                 // Fallback to denormalized name if product document is missing
                 const fallbackName = item.name || (language === 'te' && item.name_te ? item.name_te : 'Unknown Item');
-                unavailableItems.push(unavailableProduct?.name || fallbackName);
+                unavailableItems.push(product?.name || fallbackName);
             }
         });
 

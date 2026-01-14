@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, collection, query, where, documentId, getDocs, Firestore } from 'firebase/firestore';
 
 export type WhereFilterOp =
   | '<'
@@ -118,4 +118,31 @@ export function chunkArray<T>(array: T[], size: number): T[][] {
         chunks.push(array.slice(i, i + size));
     }
     return chunks;
+}
+
+/**
+ * Fetches documents by their IDs in chunks to avoid Firestore 'in' query limits.
+ *
+ * @param firestore The Firestore instance
+ * @param collectionName The name of the collection
+ * @param ids The list of document IDs to fetch
+ * @returns An array of fetched documents (data + id)
+ */
+export async function fetchDocsByIds(firestore: Firestore, collectionName: string, ids: string[]): Promise<any[]> {
+    if (!ids || ids.length === 0) return [];
+
+    // Deduplicate IDs
+    const uniqueIds = Array.from(new Set(ids));
+    const chunks = chunkArray(uniqueIds, 30); // Firestore 'in' limit is 30
+    const fetchedDocs: any[] = [];
+
+    await Promise.all(chunks.map(async (chunkIds) => {
+        const q = query(collection(firestore, collectionName), where(documentId(), 'in', chunkIds));
+        const snapshot = await getDocs(q);
+        snapshot.docs.forEach(doc => {
+            fetchedDocs.push({ id: doc.id, ...doc.data() });
+        });
+    }));
+
+    return fetchedDocs;
 }

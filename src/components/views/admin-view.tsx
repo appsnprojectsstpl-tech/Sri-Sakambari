@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -260,24 +260,30 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [extraProducts, setExtraProducts] = useState<Record<string, Product>>({}); // Cache for products not in current page
   const [newUser, setNewUser] = useState(initialUserState);
   const [whatsappMessage, setWhatsappMessage] = useState('');
-  const [cachedWhatsappProducts, setCachedWhatsappProducts] = useState<Product[] | null>(null);
+  const whatsappCacheRef = useRef<Product[] | null>(null);
+  const [whatsappCacheVersion, setWhatsappCacheVersion] = useState(0);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
   const deliveryStaff = users?.filter(u => u.role === 'delivery') || [];
 
+  const invalidateWhatsappCache = () => {
+    whatsappCacheRef.current = null;
+    setWhatsappCacheVersion(prev => prev + 1);
+  };
+
   useEffect(() => {
     if (activeTab === 'whatsapp' && firestore) {
       const generateMessage = async () => {
         try {
-          let activeProducts = cachedWhatsappProducts;
+          let activeProducts = whatsappCacheRef.current;
 
           if (!activeProducts) {
             const q = query(collection(firestore, 'products'), where('isActive', '==', true), orderBy('name', 'asc'));
             const snapshot = await getDocs(q);
             activeProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-            setCachedWhatsappProducts(activeProducts);
+            whatsappCacheRef.current = activeProducts;
           }
 
           const productList = activeProducts
@@ -295,7 +301,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       };
       generateMessage();
     }
-  }, [activeTab, firestore, language, toast, cachedWhatsappProducts]);
+  }, [activeTab, firestore, language, toast, whatsappCacheVersion]);
 
   useEffect(() => {
     if (!selectedOrder || !firestore) return;
@@ -354,7 +360,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     if (!firestore || !deletingProduct) return;
     try {
       await deleteDoc(doc(firestore, 'products', deletingProduct.id));
-      setCachedWhatsappProducts(null);
+      invalidateWhatsappCache();
       toast({
         title: 'Product Deleted',
         description: `${deletingProduct.name} has been removed.`,
@@ -423,7 +429,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           description: `${productData.name} has been added to the catalog.`,
         });
       }
-      setCachedWhatsappProducts(null);
+      invalidateWhatsappCache();
       setProductDialogOpen(false); // Close the dialog on success
 
     } catch (error: any) {
@@ -707,7 +713,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           await batch.commit();
         }
 
-        setCachedWhatsappProducts(null);
+        invalidateWhatsappCache();
         toast({
           title: 'Bulk Upload Complete',
           description: `${successCount} products added. ${errorCount} failed. ${skippedCount} skipped.`,
@@ -753,7 +759,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
-      setCachedWhatsappProducts(null);
+      invalidateWhatsappCache();
       toast({
         title: 'Database Seeded',
         description: `${seedProducts.length} products have been updated/added in Firestore.`,
@@ -798,7 +804,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
-      setCachedWhatsappProducts(null);
+      invalidateWhatsappCache();
       toast({
         title: 'All Products Deleted',
         description: `${deletedCount} products have been removed. The page will now refresh.`,

@@ -260,6 +260,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [extraProducts, setExtraProducts] = useState<Record<string, Product>>({}); // Cache for products not in current page
   const [newUser, setNewUser] = useState(initialUserState);
   const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [cachedWhatsappProducts, setCachedWhatsappProducts] = useState<Product[] | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -270,9 +271,14 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     if (activeTab === 'whatsapp' && firestore) {
       const generateMessage = async () => {
         try {
-          const q = query(collection(firestore, 'products'), where('isActive', '==', true), orderBy('name', 'asc'));
-          const snapshot = await getDocs(q);
-          const activeProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+          let activeProducts = cachedWhatsappProducts;
+
+          if (!activeProducts) {
+            const q = query(collection(firestore, 'products'), where('isActive', '==', true), orderBy('name', 'asc'));
+            const snapshot = await getDocs(q);
+            activeProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+            setCachedWhatsappProducts(activeProducts);
+          }
 
           const productList = activeProducts
             .map(p => `* ${getProductName(p, language)}: ${p.pricePerUnit}/${p.unit}`)
@@ -289,7 +295,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       };
       generateMessage();
     }
-  }, [activeTab, firestore, language, toast]);
+  }, [activeTab, firestore, language, toast, cachedWhatsappProducts]);
 
   useEffect(() => {
     if (!selectedOrder || !firestore) return;
@@ -340,6 +346,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     if (!firestore || !deletingProduct) return;
     try {
       await deleteDoc(doc(firestore, 'products', deletingProduct.id));
+      setCachedWhatsappProducts(null);
       toast({
         title: 'Product Deleted',
         description: `${deletingProduct.name} has been removed.`,
@@ -408,6 +415,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           description: `${productData.name} has been added to the catalog.`,
         });
       }
+      setCachedWhatsappProducts(null);
       setProductDialogOpen(false); // Close the dialog on success
 
     } catch (error: any) {
@@ -691,6 +699,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           await batch.commit();
         }
 
+        setCachedWhatsappProducts(null);
         toast({
           title: 'Bulk Upload Complete',
           description: `${successCount} products added. ${errorCount} failed. ${skippedCount} skipped.`,
@@ -736,6 +745,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
+      setCachedWhatsappProducts(null);
       toast({
         title: 'Database Seeded',
         description: `${seedProducts.length} products have been updated/added in Firestore.`,
@@ -780,6 +790,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
+      setCachedWhatsappProducts(null);
       toast({
         title: 'All Products Deleted',
         description: `${deletedCount} products have been removed. The page will now refresh.`,

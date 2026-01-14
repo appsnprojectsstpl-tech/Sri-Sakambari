@@ -173,7 +173,10 @@ const automaticOrderCreationFlow = ai.defineFlow(
                qty: item.qty,
                priceAtOrder,
                isCut: false, // Defaulting
-               cutCharge: 0
+               cutCharge: 0,
+               name: productData?.name,
+               name_te: productData?.name_te,
+               unit: productData?.unit,
              });
           });
 

@@ -80,24 +80,22 @@ export default function ProfilePage() {
             return;
         }
 
-        const products = fetchedProducts;
+        const productMap = new Map(fetchedProducts.map(p => [p.id, p]));
         const unavailableItems: string[] = [];
         const itemsToProcess: CartItem[] = [];
 
         order.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId && p.isActive);
-            if (product) {
+            const product = productMap.get(item.productId);
+            if (product && product.isActive) {
                 itemsToProcess.push({
                     product,
                     quantity: item.qty,
                     isCut: item.isCut || false
                 });
             } else {
-                // Try to find the product even if inactive to get the name
-                const unavailableProduct = products.find(p => p.id === item.productId);
-                // Fallback to denormalized name if product document is missing
+                // Fallback to denormalized name if product document is missing or inactive
                 const fallbackName = item.name || (language === 'te' && item.name_te ? item.name_te : 'Unknown Item');
-                unavailableItems.push(unavailableProduct?.name || fallbackName);
+                unavailableItems.push(product?.name || fallbackName);
             }
         });
 

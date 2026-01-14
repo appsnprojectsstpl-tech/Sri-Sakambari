@@ -1,7 +1,7 @@
 
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { useUser, useCollection, useFirestore } from '@/firebase';
+import { useUser, useCollection, useFirestore, useAuth } from '@/firebase';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { Order, Product, CartItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/context/language-context';
-import { getProductName } from '@/lib/translations';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/header';
 import { signOut } from 'firebase/auth';
-import { useAuth } from '@/firebase';
 import dynamic from 'next/dynamic';
+import { doc, getDoc } from 'firebase/firestore';
 
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
 
@@ -25,6 +24,7 @@ export default function ProfilePage() {
     const { language } = useLanguage();
     const router = useRouter();
     const auth = useAuth();
+    const firestore = useFirestore();
 
     const { data: rawOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: user?.id ? [['where', 'customerId', '==', user.id]] : [],
@@ -40,8 +40,6 @@ export default function ProfilePage() {
         });
     }, [rawOrders]);
 
-    const { data: products, loading: productsLoading } = useCollection<Product>('products');
-
     useEffect(() => {
         if (!userLoading && !user) {
             router.push('/login');
@@ -55,9 +53,31 @@ export default function ProfilePage() {
         }
     };
 
-    const handleRepeatOrder = (order: Order) => {
-        if (!products) return;
+    const handleRepeatOrder = async (order: Order) => {
+        if (!firestore) return;
 
+        // Fetch products on demand
+        const itemIds = Array.from(new Set(order.items.map(item => item.productId)));
+        const fetchedProducts: Product[] = [];
+
+        try {
+            await Promise.all(itemIds.map(async (id) => {
+                const productDoc = await getDoc(doc(firestore, 'products', id));
+                if (productDoc.exists()) {
+                    fetchedProducts.push({ id: productDoc.id, ...productDoc.data() } as Product);
+                }
+            }));
+        } catch (error) {
+            console.error("Error fetching products for repeat order:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: 'Failed to fetch product details. Please try again.',
+            });
+            return;
+        }
+
+        const products = fetchedProducts;
         const unavailableItems: string[] = [];
         const itemsToProcess: CartItem[] = [];
 
@@ -70,8 +90,11 @@ export default function ProfilePage() {
                     isCut: item.isCut || false
                 });
             } else {
+                // Try to find the product even if inactive to get the name
                 const unavailableProduct = products.find(p => p.id === item.productId);
-                unavailableItems.push(unavailableProduct?.name || 'Unknown Item');
+                // Fallback to denormalized name if product document is missing
+                const fallbackName = item.name || (language === 'te' && item.name_te ? item.name_te : 'Unknown Item');
+                unavailableItems.push(unavailableProduct?.name || fallbackName);
             }
         });
 
@@ -84,6 +107,7 @@ export default function ProfilePage() {
             return;
         }
 
+        let currentCart: CartItem[] = [];
         if (typeof window !== 'undefined') {
             const currentCartJson = localStorage.getItem('cart');
             try {
@@ -123,7 +147,7 @@ export default function ProfilePage() {
         router.push('/dashboard');
     };
 
-    if (userLoading || ordersLoading || productsLoading || !user) {
+    if (userLoading || ordersLoading || !user) {
         return (
             <div className="flex items-center justify-center min-h-screen">
                 <p>Loading profile...</p>
@@ -185,10 +209,10 @@ export default function ProfilePage() {
                                                     </TableHeader>
                                                     <TableBody>
                                                         {order.items.map(item => {
-                                                            const product = products?.find(p => p.id === item.productId);
+                                                            const displayName = language === 'te' && item.name_te ? item.name_te : (item.name || 'Item not found');
                                                             return (
                                                                 <TableRow key={item.productId}>
-                                                                    <TableCell>{product ? getProductName(product, language) : 'Item not found'}</TableCell>
+                                                                    <TableCell>{displayName}</TableCell>
                                                                     <TableCell>{item.qty}</TableCell>
                                                                     <TableCell>{item.priceAtOrder.toFixed(2)}</TableCell>
                                                                 </TableRow>

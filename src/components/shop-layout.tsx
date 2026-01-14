@@ -5,6 +5,7 @@ import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { signOut } from 'firebase/auth';
 import type { Product, CartItem } from '@/lib/types';
 import Header from '@/components/header';
@@ -185,11 +186,17 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                                 )}
                             >
                                 <div className={cn(
-                                    "w-6 h-6 rounded-full overflow-hidden bg-white/20 shrink-0",
+                                    "w-6 h-6 rounded-full overflow-hidden bg-white/20 shrink-0 relative",
                                     activeCategory === cat.id ? "border border-white/30" : "border border-gray-100"
                                 )}>
                                     {cat.products[0]?.imageUrl ? (
-                                        <img src={cat.products[0].imageUrl} className="w-full h-full object-cover" alt="" />
+                                        <Image
+                                            src={cat.products[0].imageUrl}
+                                            fill
+                                            className="object-cover"
+                                            alt=""
+                                            sizes="24px"
+                                        />
                                     ) : (
                                         <div className="w-full h-full bg-gray-200" />
                                     )}

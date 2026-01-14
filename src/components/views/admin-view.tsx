@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -160,8 +160,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     await batch.commit();
   };
 
-  // Products: Fetch on 'products' or 'whatsapp' tab
-  const shouldFetchProducts = activeTab === 'products' || activeTab === 'whatsapp';
+  // Products: Fetch on 'products' tab (WhatsApp fetches its own full list)
+  const shouldFetchProducts = activeTab === 'products';
 
   const productConstraints = [
     ['orderBy', 'name', 'asc'],
@@ -267,19 +267,29 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const deliveryStaff = users?.filter(u => u.role === 'delivery') || [];
 
   useEffect(() => {
-    if (products) {
-      const activeProducts = products.filter(p => p.isActive);
-      const productList = activeProducts
-        .map(p => `* ${getProductName(p, language)}: ${p.pricePerUnit}/${p.unit}`)
-        .join('\n');
+    if (activeTab === 'whatsapp' && firestore) {
+      const generateMessage = async () => {
+        try {
+          const q = query(collection(firestore, 'products'), where('isActive', '==', true), orderBy('name', 'asc'));
+          const snapshot = await getDocs(q);
+          const activeProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
 
-      const appUrl = window.location.origin;
+          const productList = activeProducts
+            .map(p => `* ${getProductName(p, language)}: ${p.pricePerUnit}/${p.unit}`)
+            .join('\n');
 
-      const message = `*Today's Fresh Stock - Shankari Devi Market*\n\n${productList}\n\n*Place your order now:*\n1. *Click here:* ${appUrl}\n2. *Or, reply to this message with your list!* (e.g., "Sweet Corn x 1, Milk x 2")`;
+          const appUrl = window.location.origin;
+          const message = `*Today's Fresh Stock - Shankari Devi Market*\n\n${productList}\n\n*Place your order now:*\n1. *Click here:* ${appUrl}\n2. *Or, reply to this message with your list!* (e.g., "Sweet Corn x 1, Milk x 2")`;
 
-      setWhatsappMessage(message);
+          setWhatsappMessage(message);
+        } catch (error) {
+          console.error("Failed to generate WhatsApp message", error);
+          toast({ variant: 'destructive', title: 'Error', description: 'Failed to load products for WhatsApp message' });
+        }
+      };
+      generateMessage();
     }
-  }, [products, language]);
+  }, [activeTab, firestore, language, toast]);
 
   useEffect(() => {
     if (!selectedOrder || !firestore) return;
@@ -899,17 +909,24 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   };
 
   const handleMigrateOrders = async () => {
-    if (!firestore || !products) return;
+    if (!firestore) return;
     setLoading(true);
 
     try {
-      // Fetch all orders for migration
+      // 1. Fetch ALL products for mapping (ignore pagination)
+      const productsSnapshot = await getDocs(collection(firestore, 'products'));
+      const productMap = new Map<string, Product>();
+      productsSnapshot.forEach(doc => {
+        productMap.set(doc.id, { id: doc.id, ...doc.data() } as Product);
+      });
+
+      // 2. Fetch all orders for migration
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
       const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
 
-      // Chunk updates to respect Firestore batch limit of 500
+      // 3. Chunk updates to respect Firestore batch limit of 500
       const updates: { ref: any, data: any }[] = [];
 
       allOrders.forEach(order => {
@@ -918,7 +935,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           // If item already has name, skip
           if (item.name) return item;
 
-          const product = products.find(p => p.id === item.productId);
+          const product = productMap.get(item.productId);
           if (product) {
             orderUpdated = true;
             return {
@@ -1541,12 +1558,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 {/* Image Gallery */}
                 {editingProduct && (
                   <ProductImageGallery
-                    images={useMemo(() =>
-                      'images' in editingProduct && Array.isArray(editingProduct.images)
-                        ? editingProduct.images
-                        : (editingProduct.imageUrl ? [editingProduct.imageUrl] : []),
-                      [editingProduct]
-                    )}
+                    images={'images' in editingProduct && Array.isArray(editingProduct.images)
+                      ? editingProduct.images
+                      : (editingProduct.imageUrl ? [editingProduct.imageUrl] : [])}
                     onRemove={removeImage}
                   />
                 )}

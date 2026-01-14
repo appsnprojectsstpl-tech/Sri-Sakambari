@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -61,7 +61,7 @@ import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
-import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter } from 'firebase/firestore';
+import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter, where } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   DropdownMenu,
@@ -76,6 +76,7 @@ import { t, getProductName } from '@/lib/translations';
 import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
 import ProductImageGallery from './product-image-gallery';
+import { useUsersByIds } from '@/hooks/use-users-by-ids';
 
 
 const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
@@ -124,14 +125,16 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState("products");
 
-  // Pagination State
+  // Products Pagination State
   const PRODUCTS_PER_PAGE = 10;
   const [pageIndex, setPageIndex] = useState(0);
   const [cursors, setCursors] = useState<any[][]>([]);
 
-  // Fetch users if we are on tabs that need user details
-  const shouldFetchUsers = activeTab === 'users' || activeTab === 'orders' || activeTab === 'subscriptions';
-  const { data: users, loading: usersLoading, error: usersError } = useCollection<User>('users', { disabled: !shouldFetchUsers });
+  // Users Pagination State
+  const USERS_PER_PAGE = 20;
+  const [usersPageIndex, setUsersPageIndex] = useState(0);
+  const [usersCursors, setUsersCursors] = useState<any[][]>([]);
+
 
   // Notifications Logic
   const { data: notifications } = useCollection<Notification>('notifications', {
@@ -213,7 +216,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const handleNextPageOrders = () => {
     if (!orders || orders.length < ORDERS_PER_PAGE) return;
     const lastOrder = orders[orders.length - 1];
-    const cursor = [lastOrder.createdAt]; // Assuming createdAt is unique enough or we might need a secondary sort field like ID
+    const cursor = [lastOrder.createdAt];
 
     setOrdersCursors(prev => {
       const newCursors = [...prev];
@@ -232,6 +235,96 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const { data: subscriptions, loading: subscriptionsLoading, error: subscriptionsError } = useCollection<Subscription>('subscriptions', {
     disabled: activeTab !== 'subscriptions'
   });
+
+  // Users Handling - Optimized to avoid fetching all users
+
+  // 1. Paginated Users for 'users' tab
+  const userConstraints = [
+      ['orderBy', 'createdAt', 'desc'],
+      ['limit', USERS_PER_PAGE],
+      ...(usersPageIndex > 0 && usersCursors[usersPageIndex - 1] ? [['startAfter', ...usersCursors[usersPageIndex - 1]]] : [])
+  ];
+
+  const { data: paginatedUsers, loading: usersLoading, error: usersError } = useCollection<User>('users', {
+      disabled: activeTab !== 'users',
+      constraints: userConstraints as any
+  });
+
+  const handleNextPageUsers = () => {
+    if (!paginatedUsers || paginatedUsers.length < USERS_PER_PAGE) return;
+    const lastUser = paginatedUsers[paginatedUsers.length - 1];
+    const cursor = [lastUser.createdAt];
+
+    setUsersCursors(prev => {
+      const newCursors = [...prev];
+      newCursors[usersPageIndex] = cursor;
+      return newCursors;
+    });
+    setUsersPageIndex(prev => prev + 1);
+  };
+
+  const handlePrevPageUsers = () => {
+    if (usersPageIndex > 0) {
+      setUsersPageIndex(prev => prev - 1);
+    }
+  };
+
+  // 2. Referenced Users for 'orders' and 'subscriptions' tabs
+  const referencedUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (activeTab === 'orders' && orders) {
+      orders.forEach(o => {
+        if (o.customerId) ids.add(o.customerId);
+        if (o.deliveryPartnerId) ids.add(o.deliveryPartnerId);
+      });
+    }
+    if (activeTab === 'subscriptions' && subscriptions) {
+       subscriptions.forEach(s => {
+         if (s.customerId) ids.add(s.customerId);
+       });
+    }
+    return Array.from(ids);
+  }, [activeTab, orders, subscriptions]);
+
+  const { users: referencedUsers, loading: refUsersLoading } = useUsersByIds(referencedUserIds);
+
+  // 3. Delivery Staff for dropdowns (usually a small subset of users)
+  const { data: allDeliveryStaff } = useCollection<User>('users', {
+      disabled: activeTab !== 'orders',
+      constraints: [['where', 'role', '==', 'delivery']]
+  });
+
+  // Combined User Accessor
+  const getUser = (id: string | undefined): User | undefined => {
+      if (!id) return undefined;
+      // Prioritize the list relevant to current tab
+      if (activeTab === 'users') return paginatedUsers?.find(u => u.id === id);
+
+      // Check referenced users first (O(N) but small N)
+      const refUser = referencedUsers.find(u => u.id === id);
+      if (refUser) return refUser;
+
+      // Check delivery staff
+      return allDeliveryStaff?.find(u => u.id === id);
+  };
+
+  // Backwards compatibility for render code relying on 'users.find'
+  // We create a proxy or a combined list for specific lookups if needed,
+  // but better to just use getUser where possible.
+  // For the existing code that does `users?.find(...)`, we can construct a
+  // 'users' array that contains everything we have loaded.
+  const users = useMemo(() => {
+     const combined = [
+         ...(paginatedUsers || []),
+         ...(referencedUsers || []),
+         ...(allDeliveryStaff || [])
+     ];
+     // Deduplicate by ID
+     const uniqueMap = new Map();
+     combined.forEach(u => uniqueMap.set(u.id, u));
+     return Array.from(uniqueMap.values());
+  }, [paginatedUsers, referencedUsers, allDeliveryStaff]);
+
 
   const { data: areas, loading: areasLoading, error: areasError } = useCollection<any>('areas');
 
@@ -264,7 +357,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
   const [loading, setLoading] = useState(false);
 
-  const deliveryStaff = users?.filter(u => u.role === 'delivery') || [];
+  // Use the specifically fetched delivery staff instead of filtering the potentially partial 'users' list
+  const deliveryStaff = allDeliveryStaff || [];
 
   useEffect(() => {
     if (activeTab === 'whatsapp' && firestore) {
@@ -875,24 +969,30 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   };
 
   const handleExportClick = async () => {
-    if (!firestore || !users) {
+    if (!firestore) {
       toast({
         variant: 'destructive',
         title: 'Export Failed',
-        description: 'User data or database connection not available.',
+        description: 'Database connection not available.',
       });
       return;
     }
 
     setLoading(true);
     try {
-      // Fetch all orders for export, bypassing pagination
+      // 1. Fetch all orders for export
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
       const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
 
-      exportOrdersToExcel(allOrders, users);
+      // 2. Fetch all users for ID resolution in Export
+      // This is a heavy operation but only runs on demand
+      const usersRef = collection(firestore, 'users');
+      const usersSnapshot = await getDocs(usersRef);
+      const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+
+      exportOrdersToExcel(allOrders, allUsers);
       toast({
         title: 'Export Successful',
         description: `Exported ${allOrders.length} orders.`,
@@ -1179,8 +1279,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <>
               <div className="md:hidden space-y-4 mt-4">
                 {(orders || []).map((order) => {
-                  const customer = users?.find(u => u.id === order.customerId);
-                  const partner = users?.find(u => u.id === order.deliveryPartnerId);
+                  const customer = getUser(order.customerId);
+                  const partner = getUser(order.deliveryPartnerId);
                   return (
                     <Card key={order.id} onClick={() => handleViewOrderDetails(order)}>
                       <CardHeader>
@@ -1230,8 +1330,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 </TableHeader>
                 <TableBody>
                   {(orders || []).map((order) => {
-                    const customer = users?.find(u => u.id === order.customerId);
-                    const partner = users?.find(u => u.id === order.deliveryPartnerId);
+                    const customer = getUser(order.customerId);
+                    const partner = getUser(order.deliveryPartnerId);
                     return (
                       <TableRow key={order.id} onClick={() => handleViewOrderDetails(order)} className="cursor-pointer">
                         <TableCell className="font-mono text-xs">{order.id}</TableCell>
@@ -1293,7 +1393,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <>
               <div className="md:hidden space-y-4 mt-4">
                 {(subscriptions || []).map((sub) => {
-                  const customer = users?.find(u => u.id === sub.customerId);
+                  const customer = getUser(sub.customerId);
                   return (
                     <Card key={sub.id}>
                       <CardHeader>
@@ -1323,7 +1423,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                 </TableHeader>
                 <TableBody>
                   {(subscriptions || []).map((sub) => {
-                    const customer = users?.find(u => u.id === sub.customerId);
+                    const customer = getUser(sub.customerId);
                     return (
                       <TableRow key={sub.id}>
                         <TableCell>{sub.planName}</TableCell>
@@ -1354,7 +1454,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           {usersLoading ? (<p>Loading users...</p>) : (
             <>
               <div className="md:hidden space-y-4">
-                {(users || []).map((user) => (
+                {(paginatedUsers || []).map((user) => (
                   <Card key={user.id}>
                     <CardHeader>
                       <CardTitle className="text-base flex justify-between items-center">
@@ -1381,7 +1481,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(users || []).map((user) => (
+                  {(paginatedUsers || []).map((user) => (
                     <TableRow key={user.id}>
                       <TableCell>{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>
@@ -1394,469 +1494,30 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   ))}
                 </TableBody>
               </Table>
+
+              <div className="flex items-center justify-end space-x-2 py-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePrevPageUsers}
+                  disabled={usersPageIndex === 0 || usersLoading}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  {t('previous', language) || 'Previous'}
+                </Button>
+                <div className="text-sm font-medium">
+                  Page {usersPageIndex + 1}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleNextPageUsers}
+                  disabled={!paginatedUsers || paginatedUsers.length < USERS_PER_PAGE || usersLoading}
+                >
+                  {t('next', language) || 'Next'}
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
             </>
           )}
         </TabsContent>
-
-        <TabsContent value="whatsapp">
-          <Card>
-            <CardHeader>
-              <CardTitle>WhatsApp Marketing Message</CardTitle>
-              <CardDescription>Copy this message to share the daily stock update with customers.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                value={whatsappMessage}
-                className="min-h-[300px] font-mono text-sm"
-                readOnly
-              />
-              <div className="flex gap-4">
-                <Button onClick={handleCopyWhatsapp} className="flex-1">
-                  <Copy className="mr-2 h-4 w-4" /> Copy Message
-                </Button>
-                <Button onClick={handleOpenWhatsapp} variant="outline" className="flex-1">
-                  <ExternalLink className="mr-2 h-4 w-4" /> Open WhatsApp
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Coupon Dialog */}
-      <Dialog open={isCouponDialogOpen} onOpenChange={setCouponDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingCoupon?.id ? 'Edit Coupon' : 'Create New Coupon'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveCoupon} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Coupon Code</Label>
-                <Input name="code" defaultValue={editingCoupon?.code} placeholder="SUMMER50" required />
-              </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select name="type" defaultValue={editingCoupon?.type || 'FLAT'}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FLAT">Flat Amount (₹)</SelectItem>
-                    <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Value</Label>
-                <Input name="value" type="number" defaultValue={editingCoupon?.value} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Min Order Value</Label>
-                <Input name="minOrderValue" type="number" defaultValue={editingCoupon?.minOrderValue} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Max Discount (for %)</Label>
-                <Input name="maxDiscount" type="number" defaultValue={editingCoupon?.maxDiscount} />
-              </div>
-              <div className="space-y-2">
-                <Label>Usage Limit</Label>
-                <Input name="usageLimit" type="number" defaultValue={editingCoupon?.usageLimit} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Start Date</Label>
-                <Input name="startDate" type="date" defaultValue={editingCoupon?.startDate} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date</Label>
-                <Input name="expiryDate" type="date" defaultValue={editingCoupon?.expiryDate} required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input name="description" defaultValue={editingCoupon?.description} placeholder="e.g. 50% off for new users" />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox id="isActive" name="isActive" defaultChecked={editingCoupon?.isActive} />
-              <Label htmlFor="isActive">Active</Label>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCouponDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Coupon
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isProductDialogOpen} onOpenChange={setProductDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">{'id' in (editingProduct || {}) ? 'Edit Product' : 'Add New Product'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleProductFormSubmit}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" name="name" defaultValue={editingProduct && 'name' in editingProduct ? editingProduct.name : ''} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select name="category" defaultValue={editingProduct && 'category' in editingProduct ? editingProduct.category : ''}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {['Vegetables', 'Fruits', 'Dairy', 'Subscription'].map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pricePerUnit">Price</Label>
-                  <Input id="pricePerUnit" name="pricePerUnit" type="number" step="0.01" defaultValue={editingProduct && 'pricePerUnit' in editingProduct ? editingProduct.pricePerUnit : 0} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unit">Unit</Label>
-                  <Input id="unit" name="unit" defaultValue={editingProduct && 'unit' in editingProduct ? editingProduct.unit : ''} placeholder="e.g., kg, packet" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="imageUrl">Image URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="imageUrl"
-                    name="imageUrl"
-                    placeholder="https://..."
-                    defaultValue={editingProduct?.imageUrl || ''}
-                    value={editingProduct?.imageUrl || ''}
-                    onChange={(e) => setEditingProduct(prev => prev ? { ...prev, imageUrl: e.target.value } : null)}
-                  />
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <Label htmlFor="imageUpload" className="cursor-pointer flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:opacity-80 transition-opacity">
-                    <Upload className="w-4 h-4" />
-                    {uploadingImage ? t('uploading', language) : "Upload Images"}
-                  </Label>
-                  <Input
-                    id="imageUpload"
-                    type="file"
-                    accept="image/*"
-                    multiple // Allow multiple files
-                    className="hidden"
-                    onChange={handleImageUpload}
-                    disabled={uploadingImage}
-                  />
-                </div>
-
-                {/* Image Gallery */}
-                {editingProduct && (
-                  <ProductImageGallery
-                    images={'images' in editingProduct && Array.isArray(editingProduct.images)
-                      ? editingProduct.images
-                      : (editingProduct.imageUrl ? [editingProduct.imageUrl] : [])}
-                    onRemove={removeImage}
-                  />
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="isActive" name="isActive" defaultChecked={editingProduct ? ('isActive' in editingProduct ? editingProduct.isActive : true) : true} />
-                <Label htmlFor="isActive">Product is active</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="isCutVegetable" name="isCutVegetable" defaultChecked={editingProduct ? ('isCutVegetable' in editingProduct ? editingProduct.isCutVegetable : false) : false} />
-                <Label htmlFor="isCutVegetable">Cutting service available</Label>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cutCharge">Cut Charge</Label>
-                <Input id="cutCharge" name="cutCharge" type="number" step="0.01" defaultValue={editingProduct && 'cutCharge' in editingProduct ? editingProduct.cutCharge : 0} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save changes"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isUserDialogOpen} onOpenChange={setUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">Add New User</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateUser}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-name">Name</Label>
-                <Input id="new-name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-email">Email</Label>
-                <Input id="new-email" type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-password">Password</Label>
-                <Input id="new-password" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-phone">Phone</Label>
-                <Input id="new-phone" type="tel" value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-role">Role</Label>
-                <Select value={newUser.role} onValueChange={(value: Role) => setNewUser({ ...newUser, role: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="customer">Customer</SelectItem>
-                    <SelectItem value="delivery">Delivery Staff</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-address">Address</Label>
-                <Input id="new-address" value={newUser.address} onChange={(e) => setNewUser({ ...newUser, address: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-area">Area</Label>
-                <Select required onValueChange={(value) => setNewUser({ ...newUser, area: value })} value={newUser.area}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select area" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(areas || []).map(a => <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-pincode">Pincode</Label>
-                <Input id="new-pincode" value={newUser.pincode} onChange={(e) => setNewUser({ ...newUser, pincode: e.target.value })} required />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create User'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isEditUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">Edit User</DialogTitle>
-          </DialogHeader>
-          {editingUser && (
-            <form onSubmit={handleUpdateUser}>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Name</Label>
-                  <Input id="edit-name" value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-email">Email</Label>
-                  <Input id="edit-email" type="email" value={editingUser.email} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-phone">Phone</Label>
-                  <Input id="edit-phone" type="tel" value={editingUser.phone} onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-role">Role</Label>
-                  <Select value={editingUser.role} onValueChange={(value: Role) => setEditingUser({ ...editingUser, role: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="customer">Customer</SelectItem>
-                      <SelectItem value="delivery">Delivery Staff</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditUserDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={loading}>{loading ? 'Updating...' : 'Save Changes'}</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isOrderDetailOpen} onOpenChange={setOrderDetailOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Order #{selectedOrder?.id}</DialogTitle>
-            <DialogDescription>
-              Placed on {selectedOrder && new Date(selectedOrder.createdAt as any).toLocaleDateString()}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedOrder && users && products && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-semibold mb-2">Customer Details</h3>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.name}</div>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.address}</div>
-                  <div>{selectedOrder.area}</div>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.phone}</div>
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-2">Order Summary</h3>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">Status:</span>
-                    <Select
-                      value={selectedOrder.status}
-                      onValueChange={(val: Order['status']) => handleStatusChange(selectedOrder.id, val)}
-                    >
-                      <SelectTrigger className="h-8 w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PENDING">Pending</SelectItem>
-                        <SelectItem value="ACCEPTED">Accepted</SelectItem>
-                        <SelectItem value="PREPARING">Preparing</SelectItem>
-                        <SelectItem value="OUT_FOR_DELIVERY">Out for Delivery</SelectItem>
-                        <SelectItem value="DELIVERED">Delivered</SelectItem>
-                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>Total: {selectedOrder.totalAmount}</div>
-                  <div>Payment: {selectedOrder.paymentMode}</div>
-                  <div>Delivery Partner: {users.find(u => u.id === selectedOrder.deliveryPartnerId)?.name || 'Not Assigned'}</div>
-                </div>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2">Items</h3>
-                <ul className="space-y-1 text-sm">
-                  {selectedOrder.items.map(item => {
-                    const product = products.find(p => p.id === item.productId) || extraProducts[item.productId];
-                    return (
-                      <li key={item.productId} className="flex justify-between">
-                        <span>{product ? getProductName(product, language) : 'Unknown Item'}</span>
-                        <span className="text-muted-foreground">
-                          {item.qty} x {item.priceAtOrder.toFixed(2)}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-
-              {selectedOrder.deliveryPhotoUrl && (
-                <div>
-                  <h3 className="font-semibold mb-2">Proof of Delivery</h3>
-                  <div className="relative aspect-video w-full rounded-md overflow-hidden border">
-                    <Image src={selectedOrder.deliveryPhotoUrl} alt="Proof of delivery" fill className="object-contain" />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOrderDetailOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the product
-              <span className="font-semibold"> {deletingProduct?.name}</span>.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={isBulkUploadOpen} onOpenChange={setBulkUploadOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Bulk Upload Products</DialogTitle>
-            <DialogDescription>
-              Upload a CSV file to add multiple products at once. The CSV must have the following headers:
-              <code className="p-1 bg-muted rounded-sm text-xs">name,category,pricePerUnit,unit,isActive,imageUrl,imageHint,displayOrder</code>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid w-full max-w-sm items-center gap-1.5 py-4">
-            <Label htmlFor="csv-upload">CSV File</Label>
-            <Input id="csv-upload" type="file" accept=".csv" onChange={handleBulkUpload} disabled={loading} />
-          </div>
-          {loading && <p className="text-sm text-muted-foreground">Uploading and processing... This may take a moment.</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkUploadOpen(false)} disabled={loading}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog open={isSeedDialogOpen} onOpenChange={setSeedDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Seed Database?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will overwrite existing products in Firestore with the same ID and add all products from the local seed file. This action is recommended to get your app running but cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleSeedDatabase}>Seed Database</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={isClearProductsDialogOpen} onOpenChange={setClearProductsDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear All Products?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete all products from your database. Are you absolutely sure?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearAllProducts} disabled={loading}>
-              {loading ? 'Clearing...' : 'Yes, Clear All'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={isMigrateDialogOpen} onOpenChange={setMigrateDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Migrate Old Orders?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will scan all orders and populate product names for items that are missing them. This is required for the new optimized delivery view.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMigrateOrders} disabled={loading}>
-              {loading ? 'Migrating...' : 'Start Migration'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-    </div>
-  );
-}

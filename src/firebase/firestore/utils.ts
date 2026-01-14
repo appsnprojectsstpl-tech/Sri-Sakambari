@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, DocumentData } from 'firebase/firestore';
 
 export type WhereFilterOp =
   | '<'
@@ -21,6 +21,26 @@ export type Constraint =
   | ['limitToLast', number]
   | ['startAfter', ...any[]]
   | ['endBefore', ...any[]];
+
+// Function to recursively convert Firestore Timestamps to JS Dates in an object
+export const convertTimestamps = (data: DocumentData): DocumentData => {
+    const newData: DocumentData = {};
+    for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            const value = data[key];
+            if (value instanceof Object && 'seconds' in value && 'nanoseconds' in value && !(value instanceof Date)) {
+                newData[key] = (value as Timestamp).toDate();
+            } else if (Array.isArray(value)) {
+                newData[key] = value.map(item => (item instanceof Object ? convertTimestamps(item) : item));
+            } else if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
+                newData[key] = convertTimestamps(value);
+            } else {
+                newData[key] = value;
+            }
+        }
+    }
+    return newData;
+};
 
 // Generic deep compare (fallback)
 export function deepCompare(a: any, b: any): boolean {

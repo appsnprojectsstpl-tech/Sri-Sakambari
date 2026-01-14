@@ -19,7 +19,7 @@ import {
   type Timestamp,
 } from 'firebase/firestore';
 import { useFirestore } from '../provider';
-import { compareConstraints, type Constraint, type WhereFilterOp, type OrderByDirection } from './utils';
+import { compareConstraints, type Constraint, type WhereFilterOp, type OrderByDirection, convertTimestamps } from './utils';
 
 interface UseCollectionOptions {
   constraints?: Constraint[];
@@ -33,26 +33,6 @@ interface UseCollectionReturn<T> {
   error: FirestoreError | null;
   forceRefetch: () => void;
 }
-
-// Function to recursively convert Firestore Timestamps to JS Dates in an object
-const convertTimestamps = (data: DocumentData): DocumentData => {
-    const newData: DocumentData = {};
-    for (const key in data) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-            const value = data[key];
-            if (value instanceof Object && 'seconds' in value && 'nanoseconds' in value && !(value instanceof Date)) {
-                newData[key] = (value as Timestamp).toDate();
-            } else if (Array.isArray(value)) {
-                newData[key] = value.map(item => (item instanceof Object ? convertTimestamps(item) : item));
-            } else if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
-                newData[key] = convertTimestamps(value);
-            } else {
-                newData[key] = value;
-            }
-        }
-    }
-    return newData;
-};
 
 function useConstraintsMemoize(value: Constraint[] | undefined): Constraint[] | undefined {
   const ref = useRef<Constraint[] | undefined>(value);

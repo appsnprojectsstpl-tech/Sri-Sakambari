@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, Query, getDocs, query, limit, startAfter, DocumentSnapshot } from 'firebase/firestore';
 
 export type WhereFilterOp =
   | '<'
@@ -118,4 +118,42 @@ export function chunkArray<T>(array: T[], size: number): T[][] {
         chunks.push(array.slice(i, i + size));
     }
     return chunks;
+}
+
+/**
+ * Fetches all documents matching a query by paginating through them in batches.
+ * This prevents timeouts and memory issues with large result sets.
+ *
+ * @param baseQuery The base Firestore query (e.g. collection reference or query with orderBy)
+ * @param batchSize The number of documents to fetch per batch (default 450)
+ * @returns Array of document data objects, each including the 'id' field
+ */
+export async function fetchAllDocsInBatches<T>(
+    baseQuery: Query,
+    batchSize: number = 450
+): Promise<(T & { id: string })[]> {
+    const allDocs: (T & { id: string })[] = [];
+    let lastDoc: DocumentSnapshot | null = null;
+    let hasMore = true;
+
+    while (hasMore) {
+        let constraints: any[] = [limit(batchSize)];
+        if (lastDoc) {
+            constraints.push(startAfter(lastDoc));
+        }
+
+        const q = query(baseQuery, ...constraints);
+        const snapshot = await getDocs(q);
+
+        snapshot.docs.forEach(doc => {
+            allDocs.push({ id: doc.id, ...doc.data() } as (T & { id: string }));
+        });
+
+        if (snapshot.docs.length < batchSize) {
+            hasMore = false;
+        } else {
+            lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        }
+    }
+    return allDocs;
 }

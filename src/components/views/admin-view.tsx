@@ -76,6 +76,7 @@ import { t, getProductName } from '@/lib/translations';
 import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
 import ProductImageGallery from './product-image-gallery';
+import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
 
 
 const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
@@ -905,11 +906,10 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
     setLoading(true);
     try {
-      // Fetch all orders for export, bypassing pagination
+      // Fetch all orders for export using batching
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
-      const snapshot = await getDocs(q);
-      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      const allOrders = await fetchAllDocsInBatches<Order>(q);
 
       exportOrdersToExcel(allOrders, users);
       toast({
@@ -933,17 +933,17 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
     try {
       // 1. Fetch ALL products for mapping (ignore pagination)
-      const productsSnapshot = await getDocs(collection(firestore, 'products'));
+      // Use orderBy('name') to ensure consistent cursor-based pagination
+      const productsQuery = query(collection(firestore, 'products'), orderBy('name'));
+      const allProducts = await fetchAllDocsInBatches<Product>(productsQuery);
+
       const productMap = new Map<string, Product>();
-      productsSnapshot.forEach(doc => {
-        productMap.set(doc.id, { id: doc.id, ...doc.data() } as Product);
-      });
+      allProducts.forEach(p => productMap.set(p.id, p));
 
       // 2. Fetch all orders for migration
       const ordersRef = collection(firestore, 'orders');
       const q = query(ordersRef, orderBy('createdAt', 'desc'));
-      const snapshot = await getDocs(q);
-      const allOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      const allOrders = await fetchAllDocsInBatches<Order>(q);
 
       // 3. Chunk updates to respect Firestore batch limit of 500
       const updates: { ref: any, data: any }[] = [];

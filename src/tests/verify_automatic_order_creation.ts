@@ -241,6 +241,26 @@ async function testableOrderCreation(db: any, currentDate: Date) {
 
           // Mock products fetch - assuming simplified for test
           // In real code we fetch products. Here we just assume success for counters.
+          // MOCKING PRODUCT FETCH (Simplified for verification script)
+          const productRefs = subscription.items.map((item: any) => db.doc(`products/${item.productId}`));
+          const productDocs = await transaction.getAll(...productRefs);
+
+          const orderItems: any[] = [];
+          subscription.items.forEach((item: any, index: number) => {
+             const productDoc = productDocs[index];
+             const productData = productDoc.data();
+
+             orderItems.push({
+               productId: item.productId,
+               qty: item.qty,
+               priceAtOrder: productData?.pricePerUnit || 0,
+               isCut: false,
+               cutCharge: 0,
+               name: productData?.name,
+               name_te: productData?.name_te,
+               unit: productData?.unit,
+             });
+          });
 
           let nextId = 1001;
           if (counterDoc.exists) {
@@ -255,7 +275,8 @@ async function testableOrderCreation(db: any, currentDate: Date) {
               subscriptionId: subscription.id,
               customerId: subscription.customerId,
               deliveryDate: todayStart.toISOString(),
-              orderType: 'SUBSCRIPTION_GENERATED'
+              orderType: 'SUBSCRIPTION_GENERATED',
+              items: orderItems
           });
       });
       ordersCreatedCount++;
@@ -333,6 +354,15 @@ async function runTests() {
 
     if (subDailyOrder && !subWeekendOrder && !subCustomOrder) {
         console.log('✅ Passed: Only Daily subscription generated an order.');
+
+        // Verify Data Integrity (Denormalization)
+        const items = subDailyOrder.data().items;
+        if (items && items.length > 0 && items[0].name === 'Apple') {
+            console.log('✅ Passed: Product name is denormalized correctly.');
+        } else {
+            console.error('❌ Failed: Product name missing or incorrect on order item.', items);
+        }
+
     } else {
         console.error('❌ Failed: Unexpected orders generated.', {
             daily: !!subDailyOrder,

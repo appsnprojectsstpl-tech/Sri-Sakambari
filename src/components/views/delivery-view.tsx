@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Order, User, Product, Notification } from '@/lib/types';
+import type { Order, User, Notification } from '@/lib/types';
 import { Phone, MapPin, CheckCircle, Truck, Image as ImageIcon } from "lucide-react";
 import { Separator } from "../ui/separator";
 import { useCollection, useFirestore, useAuth, createNotification } from '@/firebase';

@@ -18,8 +18,9 @@ import {
   type OrderItem,
 } from '@/lib/types';
 import { adminDb } from '@/lib/server/firebase';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldPath } from 'firebase-admin/firestore';
 import { startOfDay, isWeekend, differenceInDays } from 'date-fns';
+import { chunkArray } from '@/firebase/firestore/utils';
 
 export async function automaticOrderCreation(
   input: AutomaticOrderCreationInput
@@ -37,8 +38,7 @@ const automaticOrderCreationFlow = ai.defineFlow(
     console.log('Starting automatic order creation flow...');
     const now = new Date();
     const todayStart = startOfDay(now);
-    const todayStr = todayStart.toISOString(); // For simple comparison if needed, though we'll use dates
-    let ordersCreatedCount = 0;
+    const todayStr = todayStart.toISOString();
 
     // 1. Fetch active subscriptions
     const subscriptionsSnapshot = await adminDb
@@ -70,8 +70,9 @@ const automaticOrderCreationFlow = ai.defineFlow(
 
     console.log(`Found ${existingSubscriptionOrderIds.size} existing subscription orders for today.`);
 
+    // 3. Filter Subscriptions to Process
+    const subscriptionsToProcess: Subscription[] = [];
 
-    // 3. Process each subscription
     for (const doc of subscriptionsSnapshot.docs) {
       const subscription = { id: doc.id, ...doc.data() } as Subscription;
 
@@ -84,12 +85,11 @@ const automaticOrderCreationFlow = ai.defineFlow(
         // Check if endDate (start of day) is before today (start of day)
         // This ensures the subscription is active ON the end date.
         if (startOfDay(endDate) < todayStart) {
-            console.log(`Subscription ${subscription.id} has ended.`);
             continue;
         }
       }
 
-      // 3. Check Frequency Logic
+      // Check Frequency Logic
       let shouldCreateOrder = false;
       const startDate =
         subscription.startDate instanceof Timestamp
@@ -98,7 +98,6 @@ const automaticOrderCreationFlow = ai.defineFlow(
 
       // Check if start date is in the future
       if (startOfDay(startDate) > todayStart) {
-         console.log(`Subscription ${subscription.id} hasn't started yet.`);
          continue;
       }
 
@@ -124,11 +123,10 @@ const automaticOrderCreationFlow = ai.defineFlow(
       }
 
       if (!shouldCreateOrder) {
-        console.log(`Skipping subscription ${subscription.id} due to frequency rules.`);
         continue;
       }
 
-      // 4. Idempotency Check: Has an order been created for this subscription today?
+      // Idempotency Check
       if (existingSubscriptionOrderIds.has(subscription.id)) {
         console.log(`Order already exists for subscription ${subscription.id} on ${todayStr}.`);
         continue;
@@ -139,65 +137,121 @@ const automaticOrderCreationFlow = ai.defineFlow(
         continue;
       }
 
-      // 5. Create Order via Transaction
-      try {
+      subscriptionsToProcess.push(subscription);
+    }
+
+    if (subscriptionsToProcess.length === 0) {
+        console.log("No subscriptions match criteria for today.");
+        return { ordersCreated: 0 };
+    }
+
+    console.log(`Preparing to create ${subscriptionsToProcess.length} orders.`);
+
+    // 4. Bulk Fetch Data (Users and Products)
+    const userIds = new Set<string>();
+    const productIds = new Set<string>();
+
+    subscriptionsToProcess.forEach(sub => {
+        userIds.add(sub.customerId);
+        sub.items.forEach(item => productIds.add(item.productId));
+    });
+
+    const userMap = new Map<string, any>();
+    const productMap = new Map<string, any>();
+
+    const userRefs = Array.from(userIds).map(id => adminDb.doc(`users/${id}`));
+    const productRefs = Array.from(productIds).map(id => adminDb.doc(`products/${id}`));
+
+    // adminDb.getAll supports fetching mixed collection docs, but splitting them is cleaner logic-wise
+    if (userRefs.length > 0) {
+        const userDocs = await adminDb.getAll(...userRefs);
+        userDocs.forEach(doc => {
+            if (doc.exists) userMap.set(doc.id, doc.data());
+        });
+    }
+
+    if (productRefs.length > 0) {
+        const productDocs = await adminDb.getAll(...productRefs);
+        productDocs.forEach(doc => {
+            if (doc.exists) productMap.set(doc.id, doc.data());
+        });
+    }
+
+    // 5. Reserve IDs
+    const ordersCount = subscriptionsToProcess.length;
+    let startId = 1001;
+
+    try {
         await adminDb.runTransaction(async (transaction) => {
-          // A. Perform ALL reads first
-          const counterRef = adminDb.doc('counters/orders');
-          const counterDoc = await transaction.get(counterRef);
+            const counterRef = adminDb.doc('counters/orders');
+            const counterDoc = await transaction.get(counterRef);
 
-          const userDoc = await transaction.get(adminDb.doc(`users/${subscription.customerId}`));
-          const userData = userDoc.data();
-          if (!userData) throw new Error(`User ${subscription.customerId} not found`);
+            if (counterDoc.exists) {
+                startId = (counterDoc.data()?.lastId || 1000) + 1;
+            }
 
-          // Fetch products in parallel or sequence (all reads)
-          // Since we need to calculate totalAmount and get product details
-          const productRefs = subscription.items.map(item => adminDb.doc(`products/${item.productId}`));
-          const productDocs = await transaction.getAll(...productRefs);
+            const newLastId = startId + ordersCount - 1;
+            transaction.set(counterRef, { lastId: newLastId }, { merge: true });
+        });
+    } catch (err) {
+        console.error("Failed to reserve IDs", err);
+        throw new Error("Failed to reserve Order IDs");
+    }
 
-          // B. Perform calculations and logic
-          const orderItems: OrderItem[] = [];
-          let totalAmount = 0;
+    // 6. Construct Orders
+    const ordersToWrite: Order[] = [];
+    let currentIdCounter = startId;
 
-          subscription.items.forEach((item, index) => {
-             const productDoc = productDocs[index];
-             if (!productDoc.exists) throw new Error(`Product ${item.productId} not found`);
-             const productData = productDoc.data();
+    for (const subscription of subscriptionsToProcess) {
+        const userData = userMap.get(subscription.customerId);
+        if (!userData) {
+            console.warn(`User ${subscription.customerId} not found for subscription ${subscription.id}`);
+            // Skip or fail? Skipping prevents one bad data point from blocking all
+            continue;
+        }
 
-             // Basic price calculation
-             const priceAtOrder = productData?.pricePerUnit || 0;
-             const amount = priceAtOrder * item.qty;
-             totalAmount += amount;
+        const orderItems: OrderItem[] = [];
+        let totalAmount = 0;
+        let validItems = true;
 
-             orderItems.push({
-               productId: item.productId,
-               qty: item.qty,
-               priceAtOrder,
-               isCut: false, // Defaulting
-               cutCharge: 0,
-               name: productData?.name,
-               name_te: productData?.name_te,
-               unit: productData?.unit,
-             });
-          });
+        for (const item of subscription.items) {
+            const productData = productMap.get(item.productId);
+            if (!productData) {
+                console.warn(`Product ${item.productId} not found for subscription ${subscription.id}`);
+                validItems = false;
+                break;
+            }
 
-          let nextId = 1001;
-          if (counterDoc.exists) {
-            nextId = (counterDoc.data()?.lastId || 1000) + 1;
-          }
-          const orderId = `ORD-${nextId}`;
-          const newOrderRef = adminDb.doc(`orders/${orderId}`);
+            const priceAtOrder = productData.pricePerUnit || 0;
+            const amount = priceAtOrder * item.qty;
+            totalAmount += amount;
 
-          const newOrder: Order = {
+            orderItems.push({
+                productId: item.productId,
+                qty: item.qty,
+                priceAtOrder,
+                isCut: false,
+                cutCharge: 0,
+                name: productData.name,
+                name_te: productData.name_te,
+                unit: productData.unit,
+            });
+        }
+
+        if (!validItems) continue;
+
+        const orderId = `ORD-${currentIdCounter++}`;
+
+        const newOrder: Order = {
             id: orderId,
             customerId: subscription.customerId,
             name: userData.name || 'Unknown',
             phone: userData.phone || '',
-            address: subscription.area || userData.address || '', // Fallback
-            deliveryPlace: 'Home', // Default
+            address: subscription.area || userData.address || '',
+            deliveryPlace: 'Home',
             items: orderItems,
             totalAmount,
-            paymentMode: 'COD', // Default for subscription? Or match user pref?
+            paymentMode: 'COD',
             orderType: 'SUBSCRIPTION_GENERATED',
             area: subscription.area,
             deliverySlot: subscription.deliverySlot,
@@ -205,21 +259,27 @@ const automaticOrderCreationFlow = ai.defineFlow(
             status: 'PENDING',
             createdAt: new Date(),
             subscriptionId: subscription.id,
-            // agreedToTerms: true
-          };
+        };
 
-          // C. Perform ALL writes
-          transaction.set(counterRef, { lastId: nextId }, { merge: true });
-          transaction.set(newOrderRef, newOrder);
+        ordersToWrite.push(newOrder);
+    }
+
+    // 7. Batch Write Orders
+    const orderChunks = chunkArray(ordersToWrite, 400); // 500 limit, safe buffer
+    let ordersCreatedCount = 0;
+
+    for (const chunk of orderChunks) {
+        const batch = adminDb.batch();
+        chunk.forEach(order => {
+            const ref = adminDb.doc(`orders/${order.id}`);
+            batch.set(ref, order);
         });
 
-        ordersCreatedCount++;
-        console.log(`Created order for subscription ${subscription.id}`);
-
-      } catch (error) {
-        console.error(`Failed to create order for subscription ${subscription.id}:`, error);
-      }
+        await batch.commit();
+        ordersCreatedCount += chunk.length;
     }
+
+    console.log(`Successfully created ${ordersCreatedCount} orders.`);
 
     return { ordersCreated: ordersCreatedCount };
   }

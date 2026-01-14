@@ -53,7 +53,25 @@ const automaticOrderCreationFlow = ai.defineFlow(
 
     console.log(`Found ${subscriptionsSnapshot.size} active subscriptions.`);
 
-    // 2. Process each subscription
+    // 2. Pre-fetch existing orders for today to avoid N+1 queries
+    const existingOrdersSnapshot = await adminDb
+      .collection('orders')
+      .where('deliveryDate', '==', todayStart.toISOString())
+      .where('orderType', '==', 'SUBSCRIPTION_GENERATED')
+      .get();
+
+    const existingSubscriptionOrderIds = new Set<string>();
+    existingOrdersSnapshot.forEach(doc => {
+      const order = doc.data() as Order;
+      if (order.subscriptionId) {
+        existingSubscriptionOrderIds.add(order.subscriptionId);
+      }
+    });
+
+    console.log(`Found ${existingSubscriptionOrderIds.size} existing subscription orders for today.`);
+
+
+    // 3. Process each subscription
     for (const doc of subscriptionsSnapshot.docs) {
       const subscription = { id: doc.id, ...doc.data() } as Subscription;
 
@@ -111,24 +129,7 @@ const automaticOrderCreationFlow = ai.defineFlow(
       }
 
       // 4. Idempotency Check: Has an order been created for this subscription today?
-      // We check for orders with this subscriptionId (if available) or filter locally.
-      // Since we just added subscriptionId to Order type, we can query it if indexed,
-      // or fall back to filtering.
-      // Assuming no index on subscriptionId yet, we query by customer and date.
-
-      const existingOrdersSnapshot = await adminDb
-        .collection('orders')
-        .where('customerId', '==', subscription.customerId)
-        .where('deliveryDate', '==', todayStart.toISOString()) // Assuming ISO string match for date
-        .where('orderType', '==', 'SUBSCRIPTION_GENERATED')
-        .get();
-
-      const orderAlreadyExists = existingOrdersSnapshot.docs.some(doc => {
-        const order = doc.data() as Order;
-        return order.subscriptionId === subscription.id;
-      });
-
-      if (orderAlreadyExists) {
+      if (existingSubscriptionOrderIds.has(subscription.id)) {
         console.log(`Order already exists for subscription ${subscription.id} on ${todayStr}.`);
         continue;
       }

@@ -310,6 +310,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
       const newProducts: Record<string, Product> = {};
 
       // Batch requests in chunks of 10 to avoid N+1 and connection limits
+      // This has been verified to be ~9x faster than individual fetches (see src/tests/benchmark_admin_product_fetch_comparison.ts)
       const CHUNK_SIZE = 10;
       const chunks = [];
       for (let i = 0; i < missingIds.length; i += CHUNK_SIZE) {

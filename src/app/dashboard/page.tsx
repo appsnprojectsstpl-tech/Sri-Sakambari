@@ -152,7 +152,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <Header user={user} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
+      <Header user={user ?? null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
       <main className="flex-1">
         <CurrentView {...viewProps[role]} />
       </main>

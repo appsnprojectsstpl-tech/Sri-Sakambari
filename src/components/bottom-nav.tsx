@@ -8,9 +8,6 @@ import { useFlyToCart } from '@/components/fly-to-cart-context';
 
 export function BottomNav() {
     const pathname = usePathname();
-    // Cart count might be used later if we add a badge elsewhere, but here we removed cart icon.
-    // Kept hook if needed for other logic, or can remove.
-    const { cartCount } = useFlyToCart();
 
     // Hide on landing page if needed
     if (pathname === '/home') return null;

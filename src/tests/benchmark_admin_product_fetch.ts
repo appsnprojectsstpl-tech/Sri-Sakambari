@@ -39,8 +39,8 @@ async function runBenchmark() {
     const startN1 = performance.now();
 
     // Simulate browser queuing behavior
-    const results = [];
-    const executing = [];
+    const results: Promise<any>[] = [];
+    const executing: Promise<any>[] = [];
     for (const id of ids) {
         const p = mockGetDoc(id).then(res => {
             executing.splice(executing.indexOf(p), 1);

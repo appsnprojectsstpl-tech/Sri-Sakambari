@@ -97,8 +97,9 @@ const automaticOrderCreationFlow = ai.defineFlow(
           shouldCreateOrder = daysDiff % 2 === 0;
           break;
         case 'CUSTOM':
-          // Not implemented yet
-          shouldCreateOrder = false;
+          if (subscription.customDays && subscription.customDays.length > 0) {
+            shouldCreateOrder = subscription.customDays.includes(now.getDay());
+          }
           break;
         default:
           shouldCreateOrder = false;

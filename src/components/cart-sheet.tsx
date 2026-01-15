@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useCollection } from '@/firebase';
 import { doc, setDoc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import type { CartItem, Area, Order, Product } from '@/lib/types';
-import { ShoppingCart, Trash2, MessageSquare, Printer, Scissors } from 'lucide-react';
+import { ShoppingCart, Trash2, MessageSquare, Printer, Slice } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Separator } from './ui/separator';
 import { settings } from '@/lib/settings';
@@ -311,7 +311,7 @@ export default function CartSheet({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-sm line-clamp-1">{getProductName(item.product, language)}</h4>
-                          {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1"><Scissors className="h-3 w-3" />Cut</Badge>}
+                          {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1"><Slice className="h-3 w-3" />Cut</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground font-sans">
                           ₹{item.product.pricePerUnit}
@@ -375,7 +375,7 @@ export default function CartSheet({
                     <div className="flex-1">
                       <div className="font-medium flex items-center gap-2">
                         {getProductName(item.product, language)}
-                        {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-xs"><Scissors className="h-3 w-3" />Cut</Badge>}
+                        {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-xs"><Slice className="h-3 w-3" />Cut</Badge>}
                       </div>
                       <p className="text-muted-foreground font-sans">&#8377;{item.product.pricePerUnit} / {item.product.unit}</p>
                     </div>

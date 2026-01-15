@@ -1100,7 +1100,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <Alert variant="destructive">
               <Terminal className="h-4 w-4" />
               <AlertTitle>Error Loading Products</AlertTitle>
-              <AlertDescription>{productsError.message}</AlertDescription>
+              <AlertDescription>{typeof productsError === 'string' ? productsError : productsError?.message || 'Failed to load products'}</AlertDescription>
             </Alert>
           )}
           {productsLoading ? (<p>Loading products...</p>) : (
@@ -1374,7 +1374,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <Alert variant="destructive">
               <Terminal className="h-4 w-4" />
               <AlertTitle>Error Loading Users</AlertTitle>
-              <AlertDescription>{usersError.message}</AlertDescription>
+              <AlertDescription>{typeof usersError === 'string' ? usersError : usersError?.message || 'Failed to load users'}</AlertDescription>
             </Alert>
           )}
           {usersLoading ? (<p>Loading users...</p>) : (

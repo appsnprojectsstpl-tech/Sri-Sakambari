@@ -16,6 +16,7 @@ import { signOut } from 'firebase/auth';
 import dynamic from 'next/dynamic';
 import { doc, getDoc, query, collection, where, documentId, getDocs } from 'firebase/firestore';
 import { chunkArray } from '@/firebase/firestore/utils';
+import { logger, safeLocalStorage } from '@/lib/logger';
 
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
 
@@ -71,7 +72,7 @@ export default function ProfilePage() {
                 });
             }));
         } catch (error) {
-            console.error("Error fetching products for repeat order:", error);
+            logger.error("Error fetching products for repeat order:", error);
             toast({
                 variant: 'destructive',
                 title: 'Error',
@@ -110,11 +111,12 @@ export default function ProfilePage() {
 
         let currentCart: CartItem[] = [];
         if (typeof window !== 'undefined') {
-            const currentCartJson = localStorage.getItem('cart');
+            const currentCartJson = safeLocalStorage.getItem('cart');
             try {
                 currentCart = currentCartJson ? JSON.parse(currentCartJson) : [];
             } catch (e) {
-                console.error("Failed to parse cart", e);
+                logger.error("Failed to parse cart", e);
+                currentCart = [];
             }
         }
 
@@ -129,7 +131,7 @@ export default function ProfilePage() {
             }
         });
 
-        localStorage.setItem('cart', JSON.stringify(currentCart));
+        safeLocalStorage.setItem('cart', JSON.stringify(currentCart));
         window.dispatchEvent(new Event("storage"));
 
         if (unavailableItems.length > 0) {

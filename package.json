@@ -1,6 +1,6 @@
 {
   "name": "nextn",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack -p 9002",
@@ -9,7 +9,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "version:bump": "node scripts/version-bump.js",
+    "release:build": "npm run version:bump && npm run build && npx cap sync android",
+    "release:apk": "cd android && gradlew.bat assembleRelease",
+    "release:upload": "node scripts/upload-release.js",
+    "release:complete": "node scripts/release-complete.js",
+    "release:github": "node scripts/publish-github.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",

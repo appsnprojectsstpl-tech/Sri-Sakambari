@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "354300085126",
+    "project_id": "studio-1474537647-7252f",
+    "storage_bucket": "studio-1474537647-7252f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:354300085126:android:7bf0d8639e047b3f78e207",
+        "android_client_info": {
+          "package_name": "com.sakambari.market"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "354300085126-3173ou2v53bhmoh8f47fr9eb52um81po.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCe0WCFbh17WjusO9Ph07HIYLuDaV5zVkQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "354300085126-3173ou2v53bhmoh8f47fr9eb52um81po.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

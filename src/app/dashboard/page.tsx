@@ -13,6 +13,7 @@ import { useUser, useAuth, useCollection } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import CartSheet from '@/components/cart-sheet';
 import { useRouter } from 'next/navigation';
+import { logger, safeLocalStorage } from '@/lib/logger';
 
 const Views: Record<Role, FC<any>> = {
   customer: CustomerView,
@@ -35,13 +36,14 @@ export default function DashboardPage() {
   useEffect(() => {
     // Restore cart from localStorage on initial load
     try {
-      const savedCart = localStorage.getItem('cart');
+      const savedCart = safeLocalStorage.getItem('cart');
       if (savedCart) {
         setCart(JSON.parse(savedCart));
       }
     } catch (e) {
-      console.error("Failed to parse cart from localStorage", e);
-      // localStorage.removeItem('cart'); // Optional: Be careful clearing data blindly
+      logger.error("Failed to parse cart from localStorage", e);
+      // Reset to empty cart on error
+      setCart([]);
     }
   }, []);
 

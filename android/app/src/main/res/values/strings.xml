@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Sakambari</string>
-    <string name="title_activity_main">Sakambari</string>
+    <string name="app_name">Sri Sakambari</string>
+    <string name="title_activity_main">Sri Sakambari</string>
     <string name="package_name">com.sakambari.market</string>
     <string name="custom_url_scheme">com.sakambari.market</string>
 </resources>

@@ -8,6 +8,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { signOut } from 'firebase/auth';
 import type { Product, CartItem } from '@/lib/types';
+import { FlyToCartProvider } from './fly-to-cart-context';
+import { BottomNav } from './bottom-nav';
+import { Toaster } from './ui/toaster';
+import { logger, safeLocalStorage } from '@/lib/logger';
 import Header from '@/components/header';
 import CartSheet from '@/components/cart-sheet';
 import ProductCard from '@/components/product-card';
@@ -53,12 +57,13 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
 
     // Cart Persistence
     useEffect(() => {
-        const savedCart = localStorage.getItem('cart');
+        const savedCart = safeLocalStorage.getItem('cart');
         if (savedCart) {
             try {
                 setCart(JSON.parse(savedCart));
             } catch (e) {
-                console.error('Failed to parse cart', e);
+                logger.error('Failed to parse cart', e);
+                setCart([]);
             }
         }
     }, []);

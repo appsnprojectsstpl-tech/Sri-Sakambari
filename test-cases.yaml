@@ -1,0 +1,73 @@
+testCases:
+  - name: Customer Login
+    steps:
+      - Open the app
+      - Enter email rajesh.test@example.com
+      - Enter password
+      - Tap Login button
+    expected: User successfully logs in and sees dashboard
+
+  - name: Browse Products
+    steps:
+      - Login as customer
+      - View product list
+      - Scroll through products
+    expected: All products display correctly
+
+  - name: Add to Cart
+    steps:
+      - Select Tomato product
+      - Set quantity to 2
+      - Tap Add to Cart
+    expected: Item added to cart successfully
+
+  - name: Apply Coupon
+    steps:
+      - Add items to cart
+      - Open cart
+      - Enter coupon WELCOME10
+      - Tap Apply
+    expected: Discount applied correctly
+
+  - name: Checkout
+    steps:
+      - Open cart with items
+      - Tap Checkout
+      - Select delivery address
+      - Confirm order
+    expected: Order placed successfully
+
+  - name: Delivery Flow
+    steps:
+      - Login as delivery person
+      - View assigned orders
+      - Mark order as picked up
+      - Mark order as delivered
+    expected: Order status updates correctly
+
+  - name: Admin Management
+    steps:
+      - Login as admin
+      - Navigate to Products
+      - Edit product price
+      - Save changes
+    expected: Product updated successfully
+
+  - name: Offline Mode
+    steps:
+      - Turn off internet
+      - Open app
+      - Try to browse
+    expected: Shows offline message
+
+  - name: Language Switch
+    steps:
+      - Tap language toggle
+      - Select Telugu
+    expected: UI switches to Telugu
+
+  - name: Repeat Order
+    steps:
+      - Go to order history
+      - Tap Repeat Order
+    expected: Items added to cart

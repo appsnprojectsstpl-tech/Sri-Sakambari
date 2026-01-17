@@ -43,9 +43,15 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         setIsChecking(false);
     }, [auth, user, loading, pathname, router]);
 
-    // Optional: Show splash screen while checking?
-    // For now, render children but effectively the router.replace happens fast.
-    // To be strict, we could return null if checking.
+    // While checking, show nothing (or a spinner/splash)
+    if (isChecking || loading) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+        );
+    }
 
+    // If we passed checks, render children
     return <>{children}</>;
 }

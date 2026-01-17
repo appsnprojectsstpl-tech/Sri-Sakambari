@@ -1,7 +1,24 @@
 
 import type { NextConfig } from 'next';
 
+const fs = require('fs');
+const packageJson = require('./package.json');
+
+// Read version code from build.gradle
+let versionCode = 1;
+try {
+  const buildGradle = fs.readFileSync('./android/app/build.gradle', 'utf8');
+  const match = buildGradle.match(/versionCode\s+(\d+)/);
+  if (match) versionCode = parseInt(match[1]);
+} catch (e) {
+  console.warn('Could not read version code from build.gradle');
+}
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_APP_VERSION: packageJson.version,
+    NEXT_PUBLIC_VERSION_CODE: versionCode.toString(),
+  },
   /* config options here */
   output: 'export',
   typescript: {
@@ -11,6 +28,7 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   images: {
+    unoptimized: true,
     dangerouslyAllowSVG: true,
     remotePatterns: [
       {
@@ -106,6 +124,10 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       }
     ],
+  },
+  poweredByHeader: false,
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
   },
 };
 

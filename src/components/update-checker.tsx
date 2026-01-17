@@ -26,9 +26,9 @@ export function UpdateChecker() {
     const [downloading, setDownloading] = useState(false);
     const [checkingUpdate, setCheckingUpdate] = useState(false);
 
-    // Current version from package.json
-    const currentVersion = '1.0.1';
-    const currentVersionCode = 2;  // Must match android/app/build.gradle versionCode
+    // Current version from build environment
+    const currentVersion = process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0';
+    const currentVersionCode = Number(process.env.NEXT_PUBLIC_VERSION_CODE || 0);
 
     useEffect(() => {
         // Check for updates when app starts
@@ -44,7 +44,8 @@ export function UpdateChecker() {
         try {
             // Fetch version info from GitHub Raw
             const response = await fetch(
-                'https://raw.githubusercontent.com/appsnprojectsstpl-tech/Sri-Sakambari/main/version.json'
+                'https://raw.githubusercontent.com/appsnprojectsstpl-tech/Sri-Sakambari/main/version.json',
+                { cache: 'no-store' }
             );
 
             if (!response.ok) {
@@ -54,13 +55,21 @@ export function UpdateChecker() {
 
             const data: UpdateInfo = await response.json();
 
+            // DEBUG: Show what we found
+            // console.log(`Update Check: Local ${currentVersionCode} vs Remote ${data.versionCode}`);
+            alert(`Debug: Local v${currentVersionCode} vs Remote v${data.versionCode}`);
+
             // Compare version codes
+            // data.versionCode comes from version.json (which comes from build.gradle)
+            // currentVersionCode comes from process.env.NEXT_PUBLIC_VERSION_CODE
             if (data.versionCode > currentVersionCode) {
                 setUpdateInfo(data);
                 setUpdateAvailable(true);
+            } else {
+                console.log('App is up to date.');
+                alert(`App is up to date (v${currentVersionCode})`);
             }
         } catch (error) {
-            // Silently fail - don't show error to user
             console.log('Update check failed:', error);
         } finally {
             setCheckingUpdate(false);

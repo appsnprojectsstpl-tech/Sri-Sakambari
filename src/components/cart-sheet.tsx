@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useCollection } from '@/firebase';
 import { doc, setDoc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import type { CartItem, Area, Order, Product } from '@/lib/types';
-import { ShoppingCart, Trash2, MessageSquare, Printer, Slice } from 'lucide-react';
+import { ShoppingCart, Trash2, MessageSquare, Printer, Slice, Plus, Minus } from 'lucide-react';
 import { Checkbox } from './ui/checkbox';
 import { Separator } from './ui/separator';
 import { settings } from '@/lib/settings';
@@ -27,8 +27,10 @@ import { generateSalesOrderPDF } from '@/lib/pdf-utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
-const AddressManager = dynamic(() => import('./address-manager'), { ssr: false });
+import { Progress } from './ui/progress';
+import { Confetti } from './confetti';
 
+const AddressManager = dynamic(() => import('./address-manager'), { ssr: false });
 
 interface CartSheetProps {
   isOpen: boolean;
@@ -67,7 +69,7 @@ export default function CartSheet({
     address: '',
     deliveryPlace: '',
     area: '',
-    slot: ''
+    pincode: ''
   });
 
   const [useDifferentDelivery, setUseDifferentDelivery] = useState(false);
@@ -80,13 +82,18 @@ export default function CartSheet({
         address: user.address || '',
         deliveryPlace: user.address || '',
         area: user.area || '',
-        slot: ''
+        pincode: '' // Will be auto-filled when area is selected
       });
     }
   }, [user]);
 
   const finalTotal = cartTotal;
   const isMinOrderMet = finalTotal >= settings.minOrderValue;
+  // Free Delivery Nudge Logic (Gamification)
+  // Assuming a target like ₹500 for a "Free Delivery" mental goal, or just reusing minOrder functionality visually.
+  // Let's use a hypothetical FREE_DELIVERY_THRESHOLD = 500 for the visual nudge.
+  const FREE_DELIVERY_THRESHOLD = 500;
+  const progressPercentage = Math.min((finalTotal / FREE_DELIVERY_THRESHOLD) * 100, 100);
 
   const handlePlaceOrder = async () => {
     if (!user || !firestore) {
@@ -100,7 +107,7 @@ export default function CartSheet({
       return;
     }
 
-    const requiredFields = ['name', 'phone', 'address', 'area', 'slot'];
+    const requiredFields = ['name', 'phone', 'address', 'area'];
     if (useDifferentDelivery) {
       requiredFields.push('deliveryPlace');
     }
@@ -177,10 +184,10 @@ export default function CartSheet({
         orderType: 'ONE_TIME',
         area: deliveryInfo.area,
         deliveryDate: new Date().toISOString().split('T')[0],
-        deliverySlot: deliveryInfo.slot,
         status: 'PENDING',
         createdAt: serverTimestamp() as Timestamp,
         agreedToTerms: true,
+        deliverySlot: ''
       };
 
       await setDoc(orderRef, newOrderData);
@@ -214,8 +221,8 @@ export default function CartSheet({
 
 
       const message = t('whatsappOrderConfirmation', language).replace('{ORDER_ID}', newOrderId);
-      const phone = deliveryInfo.phone.replace(/[^0-9]/g, '');
-      const whatsappLink = `https://wa.me/91${phone}?text=${encodeURIComponent(message)}`;
+      // Send to Owner, not the customer (self-chat)
+      const whatsappLink = `https://wa.me/${settings.ownerPhone}?text=${encodeURIComponent(message)}`;
       setWhatsappUrl(whatsappLink);
 
       setCheckoutOpen(false);
@@ -276,8 +283,21 @@ export default function CartSheet({
     <>
       <Sheet open={isOpen} onOpenChange={onOpenChange}>
         <SheetContent className="flex flex-col">
-          <SheetHeader>
+          <SheetHeader className='space-y-1'>
             <SheetTitle className="text-2xl font-headline">{t('yourCart', language)}</SheetTitle>
+            {cart.length > 0 && (
+              <div className="space-y-1 pt-2">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className={finalTotal >= FREE_DELIVERY_THRESHOLD ? 'text-green-600' : 'text-muted-foreground'}>
+                    {finalTotal >= FREE_DELIVERY_THRESHOLD
+                      ? 'Free Delivery Unlocked!'
+                      : `Add ₹${(FREE_DELIVERY_THRESHOLD - finalTotal).toFixed(0)} for Free Delivery`}
+                  </span>
+                  <span>{Math.round(progressPercentage)}%</span>
+                </div>
+                <Progress value={progressPercentage} className="h-2" />
+              </div>
+            )}
           </SheetHeader>
           {cart.length > 0 ? (
             <div className="flex-1 overflow-y-auto pr-4 -mr-4 overflow-x-hidden">
@@ -286,7 +306,7 @@ export default function CartSheet({
                   {cart.map((item) => (
                     <motion.div
                       key={`${item.product.id}-${item.isCut}`}
-                      className="relative flex items-center gap-4 bg-background p-2 rounded-lg overflow-hidden touch-pan-y"
+                      className="relative flex items-center gap-4 bg-background p-2 rounded-lg overflow-hidden touch-pan-y shadow-sm border border-gray-100"
                       initial={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -100 }}
                       layout
@@ -315,13 +335,30 @@ export default function CartSheet({
                         </div>
                         <p className="text-xs text-muted-foreground font-sans">
                           ₹{item.product.pricePerUnit}
-                          {item.isCut && ` + ₹${item.product.cutCharge || 10}`}
+                          {item.isCut && ` + ₹${item.product.cutCharge || settings.defaultCutCharge}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Input type="number" value={item.quantity} onChange={(e) => updateCartQuantity(item.product.id, item.isCut, parseInt(e.target.value))} className="w-12 h-8 text-center px-1 text-sm" />
-                        {/* Optional standard delete button kept for accessibility */}
-                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-11 w-11 rounded-full"
+                          onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <div className="w-12 h-11 flex items-center justify-center text-sm font-semibold">
+                          {item.quantity}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="h-11 w-11 rounded-full"
+                          onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive h-11 w-11 hover:bg-destructive/10 rounded-full" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -332,10 +369,20 @@ export default function CartSheet({
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center">
-              <ShoppingCart className="h-16 w-16 text-muted-foreground/50 mb-4" />
-              <h3 className="text-xl font-semibold">{t('cartEmpty', language)}</h3>
-              <p className="text-muted-foreground">{t('cartEmptyHint', language)}</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-in fade-in zoom-in duration-300">
+              <div className="relative w-48 h-48 mb-6 opacity-80">
+                <Image
+                  src="https://illustrations.popsy.co/amber/box.svg"
+                  alt="Empty Box"
+                  fill
+                  className="object-contain"
+                />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">{t('cartEmpty', language)}</h3>
+              <p className="text-muted-foreground max-w-[200px] mb-8">{t('cartEmptyHint', language)}</p>
+              <Button onClick={() => onOpenChange(false)} variant="default" size="lg" className="rounded-full px-8 shadow-lg hover:shadow-xl transition-all hover:scale-105">
+                Start Shopping
+              </Button>
             </div>
           )}
           {cart.length > 0 && (
@@ -346,18 +393,39 @@ export default function CartSheet({
                   <span className="font-sans">&#8377;{finalTotal.toFixed(2)}</span>
                 </div>
                 {!isMinOrderMet && (
-                  <p className="text-center text-sm text-destructive">
-                    Add &#8377;{(settings.minOrderValue - finalTotal).toFixed(2)} more to place order.
+                  <p className="text-center text-sm text-destructive font-medium bg-destructive/10 p-1 rounded">
+                    Minimum order: &#8377;{settings.minOrderValue}
                   </p>
                 )}
-                <Button className="w-full" size="lg" onClick={handleProceedToCheckout} disabled={!isMinOrderMet}>
+                <Button className="w-full shadow-lg" size="lg" onClick={handleProceedToCheckout} disabled={!isMinOrderMet}>
                   {t('proceedToCheckout', language)}
+                </Button>
+
+                <div className="relative relative flex items-center py-2">
+                  <div className="flex-grow border-t border-muted"></div>
+                  <span className="flex-shrink-0 mx-4 text-xs text-muted-foreground">OR</span>
+                  <div className="flex-grow border-t border-muted"></div>
+                </div>
+
+                <Button
+                  className="w-full bg-[#25D366] hover:bg-[#128C7E] text-white shadow-lg"
+                  size="lg"
+                  onClick={() => {
+                    const itemsList = cart.map(item =>
+                      `- ${getProductName(item.product, language)} (${item.product.unit}) x ${item.quantity} ${item.isCut ? '(Cut)' : ''}`
+                    ).join('\n');
+                    const text = `Hello, I want to order:\n\n${itemsList}\n\nTotal approx: ₹${finalTotal.toFixed(2)}`;
+                    window.open(`https://wa.me/${settings.ownerPhone}?text=${encodeURIComponent(text)}`, '_blank');
+                  }}
+                >
+                  <MessageSquare className="mr-2 h-5 w-5" />
+                  Order via WhatsApp
                 </Button>
               </div>
             </SheetFooter>
           )}
         </SheetContent>
-      </Sheet>
+      </Sheet >
 
       <Dialog open={isCheckoutOpen} onOpenChange={setCheckoutOpen}>
         <DialogContent className="flex flex-col w-full h-[100dvh] max-w-none rounded-none sm:h-auto sm:max-w-lg sm:rounded-lg overflow-hidden p-0 gap-0">
@@ -380,12 +448,25 @@ export default function CartSheet({
                       <p className="text-muted-foreground font-sans">&#8377;{item.product.pricePerUnit} / {item.product.unit}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => updateCartQuantity(item.product.id, item.isCut, parseInt(e.target.value) || 0)}
-                        className="w-12 h-10 text-center text-base"
-                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-10 w-10 rounded-full"
+                        onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                      >
+                        <Minus className="h-5 w-5" />
+                      </Button>
+                      <div className="flex items-center justify-center w-12 h-10 text-base font-semibold">
+                        {item.quantity}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-10 w-10 rounded-full"
+                        onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                      >
+                        <Plus className="h-5 w-5" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -453,25 +534,44 @@ export default function CartSheet({
                 <div className="grid grid-cols-1 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="area">{t('area', language)}</Label>
-                    <Select onValueChange={value => setDeliveryInfo({ ...deliveryInfo, area: value, slot: '' })} value={deliveryInfo.area} required>
+                    <Select
+                      onValueChange={value => {
+                        // Find the selected area to get its pincode
+                        const selectedArea = areas?.find(a => a.name === value);
+                        setDeliveryInfo({
+                          ...deliveryInfo,
+                          area: value,
+                          pincode: selectedArea?.pincode || '' // Auto-fill pincode
+                        });
+                      }}
+                      value={deliveryInfo.area}
+                      required
+                    >
                       <SelectTrigger id="area" className="text-base h-11">
                         <SelectValue placeholder="Select area" />
                       </SelectTrigger>
                       <SelectContent>
-                        {areas?.map(area => <SelectItem key={area.id} value={area.name} className="text-base py-3">{area.name}</SelectItem>)}
+                        {areas?.map(area => (
+                          <SelectItem key={area.id} value={area.name} className="text-base py-3">
+                            {area.name} {area.pincode && `(${area.pincode})`}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Pincode Field - Auto-filled */}
                   <div className="grid gap-2">
-                    <Label htmlFor="slot">{t('deliverySlot', language)}</Label>
-                    <Select onValueChange={value => setDeliveryInfo({ ...deliveryInfo, slot: value })} disabled={!deliveryInfo.area} required>
-                      <SelectTrigger id="slot" className="text-base h-11">
-                        <SelectValue placeholder="Select slot" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectedArea?.defaultSlots.map(slot => <SelectItem key={slot} value={slot} className="text-base py-3">{slot}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <Label htmlFor="pincode">Pincode</Label>
+                    <Input
+                      id="pincode"
+                      className="text-base h-11"
+                      value={deliveryInfo.pincode}
+                      placeholder="Auto-filled from area"
+                      onChange={e => setDeliveryInfo({ ...deliveryInfo, pincode: e.target.value })}
+                      maxLength={6}
+                      pattern="[0-9]{6}"
+                    />
                   </div>
                 </div>
               </div>
@@ -503,14 +603,15 @@ export default function CartSheet({
       </Dialog>
 
       <Dialog open={isOrderSuccessOpen} onOpenChange={setOrderSuccessOpen}>
-        <DialogContent>
+        <DialogContent className='overflow-hidden'>
+          {isOrderSuccessOpen && <Confetti />}
           <DialogHeader>
-            <DialogTitle className="text-2xl font-headline text-center">🎉 {t('orderSuccessful', language)}! 🎉</DialogTitle>
+            <DialogTitle className="text-2xl font-headline text-center z-10 relative">🎉 {t('orderSuccessful', language)}! 🎉</DialogTitle>
           </DialogHeader>
-          <div className="text-center py-4 space-y-4">
+          <div className="text-center py-4 space-y-4 relative z-10">
             <p className="text-muted-foreground">{t('orderPlacedMessage', language)}</p>
           </div>
-          <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-2 relative z-10">
             <Button asChild className="w-full" variant="secondary">
               <Link href={whatsappUrl} target="_blank">
                 <MessageSquare className="mr-2 h-4 w-4" />

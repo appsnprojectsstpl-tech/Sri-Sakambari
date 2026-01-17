@@ -1,19 +1,21 @@
 
 'use client';
-
 import type { FC } from 'react';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import type { Product, Role, CartItem, User, Notification } from '@/lib/types';
 import Header from '@/components/header';
 import CustomerView from '@/components/views/customer-view';
-import AdminView from '@/components/views/admin-view';
-import DeliveryView from '@/components/views/delivery-view';
+// Lazy load admin and delivery views to reduce initial bundle size
+const AdminView = lazy(() => import('@/components/views/admin-view'));
+const DeliveryView = lazy(() => import('@/components/views/delivery-view'));
 import LoginView from '@/components/views/login-view';
 import { useUser, useAuth, useCollection } from '@/firebase';
 import { signOut } from 'firebase/auth';
 import CartSheet from '@/components/cart-sheet';
 import { useRouter } from 'next/navigation';
 import { logger, safeLocalStorage } from '@/lib/logger';
+import { settings } from '@/lib/settings';
+import { ErrorBoundary } from '@/components/error-boundary';
 
 const Views: Record<Role, FC<any>> = {
   customer: CustomerView,
@@ -124,7 +126,7 @@ export default function DashboardPage() {
   const cartTotal = useMemo(() => {
     return cart.reduce((total, item) => {
       const itemTotal = item.product.pricePerUnit * item.quantity;
-      const cutChargeTotal = item.isCut ? ((item.product.cutCharge || 10) * item.quantity) : 0;
+      const cutChargeTotal = item.isCut ? ((item.product.cutCharge || settings.defaultCutCharge) * item.quantity) : 0;
       return total + itemTotal + cutChargeTotal;
     }, 0);
   }, [cart]);
@@ -156,7 +158,18 @@ export default function DashboardPage() {
     <div className="flex flex-col min-h-screen bg-background text-foreground">
       <Header user={user ?? null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
       <main className="flex-1">
-        <CurrentView {...viewProps[role]} />
+        <ErrorBoundary>
+          <Suspense fallback={
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <div className="flex flex-col items-center gap-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                <p className="text-sm text-muted-foreground">Loading view...</p>
+              </div>
+            </div>
+          }>
+            <CurrentView {...viewProps[role]} />
+          </Suspense>
+        </ErrorBoundary>
       </main>
       <CartSheet
         isOpen={isCartOpen}

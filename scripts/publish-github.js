@@ -17,7 +17,7 @@ const rl = readline.createInterface({
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const version = packageJson.version;
-const apkName = `app-release-${version}.apk`;
+const apkName = `Sri-Sakambari-v${version}.apk`;
 const apkPath = path.join('android', 'app', 'build', 'outputs', 'apk', 'release', apkName);
 
 // 1. Check Prerequisites
@@ -92,55 +92,75 @@ async function uploadAsset(token, uploadUrl, filePath, fileName) {
 }
 
 // Main Flow
+// 94. Main Flow
 (async () => {
+    require('dotenv').config(); // Load environment variables
     checkPrerequisites();
 
     console.log(`📦 Prepare release for v${version}`);
 
-    rl.question('🔑 Enter GitHub Personal Access Token (classic): ', async (token) => {
-        if (!token.trim()) { console.error('Token required'); process.exit(1); }
+    // Use Env Vars or Defaults if available to skip prompts
+    let token = process.env.GITHUB_TOKEN;
+    let user = process.env.GITHUB_USER || GITHUB_USER;
+    let repo = process.env.GITHUB_REPO || GITHUB_REPO;
+    let notes = `• Version ${version} Release (Automated)`;
 
-        rl.question('👤 Enter GitHub Username: ', async (user) => {
-            rl.question('📂 Enter GitHub Repo Name: ', async (repo) => {
-                rl.question('📝 Release Notes: ', async (notes) => {
-                    rl.close();
+    // Simple helper to ask only if missing
+    const ask = (query) => new Promise(resolve => rl.question(query, resolve));
 
-                    try {
-                        // 1. Create Release
-                        const release = await createRelease(token, user, repo, notes);
+    try {
+        if (!token) {
+            token = await ask('🔑 Enter GitHub Personal Access Token (classic): ');
+            if (!token.trim()) { console.error('Token required'); process.exit(1); }
+        } else {
+            console.log('🔑 Token loaded from environment.');
+        }
 
-                        // 2. Upload APK
-                        const downloadUrl = await uploadAsset(token, release.upload_url, apkPath, apkName);
+        if (!user) user = await ask('👤 Enter GitHub Username: ');
+        if (!repo) repo = await ask('📂 Enter GitHub Repo Name: ');
 
-                        // 3. Update version.json
-                        const buildGradle = fs.readFileSync('android/app/build.gradle', 'utf8');
-                        const versionCodeMatch = buildGradle.match(/versionCode\s+(\d+)/);
-                        const versionCode = versionCodeMatch ? parseInt(versionCodeMatch[1]) : 1;
+        // Always ask for notes unless auto flag? For now, we'll default if not interactive, but here we can just auto-fill
+        // But the user might want custom notes.
+        // Let's check process.argv for --auto flag passed from release-complete.js?
+        // release-complete.js doesn't pass flags to this script yet.
+        // But for "Zero Touch", let's just use a default note or ask with a timeout?
+        // Better: Just use default notes for now to achieve the goal.
 
-                        const versionJson = {
-                            latestVersion: version,
-                            versionCode: versionCode,
-                            downloadUrl: downloadUrl,
-                            releaseNotes: notes,
-                            forceUpdate: false
-                        };
+        console.log(`📝 Notes: ${notes}`);
 
-                        fs.writeFileSync('version.json', JSON.stringify(versionJson, null, 2));
-                        console.log('\n✅ version.json updated locally.');
+        rl.close();
 
-                        console.log('\n⚠️  IMPORTANT STEPS TO FINISH:');
-                        console.log('1. Commit and push version.json to GitHub:');
-                        console.log('   git add version.json');
-                        console.log(`   git commit -m "Update version.json for v${version}"`);
-                        console.log('   git push origin main');
-                        console.log('\n🎉 Once pushed, users will detect the update!');
+        // 1. Create Release
+        const release = await createRelease(token, user, repo, notes);
 
-                    } catch (e) {
-                        console.error('❌ Error:', e.message);
-                        process.exit(1);
-                    }
-                });
-            });
-        });
-    });
+        // 2. Upload APK
+        const downloadUrl = await uploadAsset(token, release.upload_url, apkPath, apkName);
+
+        // 3. Update version.json
+        const buildGradle = fs.readFileSync('android/app/build.gradle', 'utf8');
+        const versionCodeMatch = buildGradle.match(/versionCode\s+(\d+)/);
+        const versionCode = versionCodeMatch ? parseInt(versionCodeMatch[1]) : 1;
+
+        const versionJson = {
+            latestVersion: version,
+            versionCode: versionCode,
+            downloadUrl: downloadUrl,
+            releaseNotes: notes,
+            forceUpdate: false
+        };
+
+        fs.writeFileSync('version.json', JSON.stringify(versionJson, null, 2));
+        console.log('\n✅ version.json updated locally.');
+
+        console.log('\n⚠️  IMPORTANT STEPS TO FINISH:');
+        console.log('1. Commit and push version.json to GitHub:');
+        console.log('   git add version.json');
+        console.log(`   git commit -m "Update version.json for v${version}"`);
+        console.log('   git push origin main');
+        console.log('\n🎉 Once pushed, users will detect the update!');
+
+    } catch (e) {
+        console.error('❌ Error:', e.message);
+        process.exit(1);
+    }
 })();

@@ -844,29 +844,40 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
     setUploadingImage(true);
     try {
-      const storage = getStorage();
-      const newImageUrls: string[] = [];
+      // Check if Firebase Storage is configured
+      try {
+        const storage = getStorage();
+        const newImageUrls: string[] = [];
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const storageRef = ref(storage, `products/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        const url = await getDownloadURL(storageRef);
-        newImageUrls.push(url);
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const storageRef = ref(storage, `products/${Date.now()}_${file.name}`);
+          await uploadBytes(storageRef, file);
+          const url = await getDownloadURL(storageRef);
+          newImageUrls.push(url);
+        }
+
+        setEditingProduct(prev => {
+          if (!prev) return { ...initialProductState, imageUrl: newImageUrls[0], images: newImageUrls };
+
+          const existingImages = 'images' in prev && Array.isArray(prev.images) ? prev.images : (prev.imageUrl ? [prev.imageUrl] : []);
+          const updatedImages = [...existingImages, ...newImageUrls];
+
+          return {
+            ...prev,
+            imageUrl: updatedImages[0] || '', // Keep primary image synced
+            images: updatedImages
+          };
+        });
+      } catch (storageError) {
+        // Firebase Storage not configured
+        toast({
+          variant: 'destructive',
+          title: 'Storage Not Configured',
+          description: 'Firebase Storage is not set up. Please use image URLs instead.',
+        });
+        console.error('Firebase Storage error:', storageError);
       }
-
-      setEditingProduct(prev => {
-        if (!prev) return { ...initialProductState, imageUrl: newImageUrls[0], images: newImageUrls };
-
-        const existingImages = 'images' in prev && Array.isArray(prev.images) ? prev.images : (prev.imageUrl ? [prev.imageUrl] : []);
-        const updatedImages = [...existingImages, ...newImageUrls];
-
-        return {
-          ...prev,
-          imageUrl: updatedImages[0] || '', // Keep primary image synced
-          images: updatedImages
-        };
-      });
 
       toast({
         title: t('imageUploaded', language),
@@ -1073,7 +1084,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           </PopoverContent>
         </Popover>
       </div>
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full pb-24">
         <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 h-auto">
           <TabsTrigger value="products">{t('products', language)}</TabsTrigger>
           <TabsTrigger value="orders">{t('orders', language)}</TabsTrigger>
@@ -1424,6 +1435,10 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           )}
         </TabsContent>
 
+        <TabsContent value="coupons">
+          <CouponManager />
+        </TabsContent>
+
         <TabsContent value="whatsapp">
           <Card>
             <CardHeader>
@@ -1565,20 +1580,24 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                     onChange={(e) => setEditingProduct(prev => prev ? { ...prev, imageUrl: e.target.value } : null)}
                   />
                 </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  💡 Paste image URL here (e.g., from ImgBB, Imgur, or direct links)
+                </p>
                 <div className="flex items-center gap-2 mt-2">
                   <Label htmlFor="imageUpload" className="cursor-pointer flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:opacity-80 transition-opacity">
-                    <Upload className="w-4 h-4" />
-                    {uploadingImage ? t('uploading', language) : "Upload Images"}
+                    <Upload className="h-4 w-4" />
+                    {uploadingImage ? 'Uploading...' : 'Upload Image'}
                   </Label>
                   <Input
                     id="imageUpload"
                     type="file"
                     accept="image/*"
-                    multiple // Allow multiple files
+                    multiple
                     className="hidden"
                     onChange={handleImageUpload}
                     disabled={uploadingImage}
                   />
+                  <span className="text-xs text-muted-foreground">(Storage not configured - use URL above)</span>
                 </div>
 
                 {/* Image Gallery */}

@@ -60,43 +60,58 @@ async function createUser(auth: Auth, firestore: Firestore, userData: CreateUser
 
     // Generate internal email if not provided
     const authEmail = userData.email || generateInternalEmail(userData.name);
+
+    // 1. Create Auth User
     const userCredential = await createUserWithEmailAndPassword(auth, authEmail, userData.password);
     const user = userCredential.user;
 
-    const userDocRef = doc(firestore, 'users', user.uid);
-    const { password, ...firestoreData } = userData;
+    try {
+        // 2. Create Firestore Profile
+        const userDocRef = doc(firestore, 'users', user.uid);
+        const { password, ...firestoreData } = userData;
 
-    const newUser: Omit<User, 'id' | 'createdAt'> = {
-        ...firestoreData,
-        email: firestoreData.email || '', // Store actual email (empty if not provided)
-        phone: firestoreData.phone || '', // Ensure phone is not undefined
-        pincode: firestoreData.pincode || '', // Ensure pincode is not undefined
-        landmark: firestoreData.landmark || '', // Ensure landmark is not undefined
-        addresses: [{
-            id: 'addr_' + Date.now().toString(),
-            label: 'Home',
-            line1: firestoreData.address,
-            area: firestoreData.area,
+        const newUser: Omit<User, 'id' | 'createdAt'> = {
+            ...firestoreData,
+            email: firestoreData.email || '',
+            phone: firestoreData.phone || '',
             pincode: firestoreData.pincode || '',
             landmark: firestoreData.landmark || '',
-            isDefault: true
-        }]
-    };
+            addresses: [{
+                id: 'addr_' + Date.now().toString(),
+                label: 'Home',
+                line1: firestoreData.address,
+                area: firestoreData.area,
+                pincode: firestoreData.pincode || '',
+                landmark: firestoreData.landmark || '',
+                isDefault: true
+            }]
+        };
 
-    await setDoc(userDocRef, {
-        ...newUser,
-        id: user.uid,
-        authEmail: authEmail, // Store the email used for Firebase Auth (for name-based login)
-        createdAt: serverTimestamp()
-    });
+        await setDoc(userDocRef, {
+            ...newUser,
+            id: user.uid,
+            authEmail: authEmail,
+            createdAt: serverTimestamp()
+        });
 
-    // If the user is an admin, add them to the roles_admin collection
-    if (userData.role === 'admin') {
-        const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
-        await setDoc(adminRoleRef, { assignedAt: serverTimestamp() });
+        if (userData.role === 'admin') {
+            const adminRoleRef = doc(firestore, 'roles_admin', user.uid);
+            await setDoc(adminRoleRef, { assignedAt: serverTimestamp() });
+        }
+
+        return user;
+
+    } catch (error) {
+        // 3. Rollback: Delete Auth User if Firestore fails
+        console.error("Firestore Profile Creation Failed. Rolling back Auth User.", error);
+        try {
+            await user.delete();
+            console.log("Rolled back Auth User successfully.");
+        } catch (deleteErr) {
+            console.error("CRITICAL: Failed to rollback Auth User (Ghost Account Created)", deleteErr);
+        }
+        throw error; // Re-throw original error to UI
     }
-
-    return user;
 }
 
 

@@ -69,83 +69,118 @@ export default function ProductDetailsSheet({
 
     return (
         <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <SheetContent side="bottom" className="p-0 rounded-t-[20px] max-h-[90vh] overflow-y-auto">
+            <SheetContent side="bottom" className="p-0 rounded-t-3xl max-h-[90vh] overflow-y-auto">
                 <SheetHeader className="sr-only">
                     <SheetTitle>Product Details</SheetTitle>
                 </SheetHeader>
-                <div className="relative w-full aspect-[4/3] bg-gray-50 dark:bg-white flex items-center justify-center p-6">
-                    <Image
-                        src={product.imageUrl || `https://picsum.photos/seed/${product.id}/600/400`}
-                        alt={product.name}
-                        fill
-                        className="object-contain mix-blend-multiply"
-                    />
 
-                    {/* Discount Badge */}
-                    <div className="absolute top-4 left-4 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md">
-                        {discount}% OFF
+                {/* Enhanced Image Container */}
+                <div className="relative w-full aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-white dark:to-gray-50 flex items-center justify-center p-8">
+                    <div className="relative w-full h-full">
+                        <Image
+                            src={product.imageUrl || `https://picsum.photos/seed/${product.id}/600/400`}
+                            alt={product.name}
+                            fill
+                            className="object-contain mix-blend-multiply drop-shadow-2xl"
+                            sizes="100vw"
+                            priority
+                        />
                     </div>
 
-                    <div className="absolute top-4 right-4 flex gap-2">
-                        <Button size="icon" variant="secondary" className="rounded-full h-8 w-8 bg-white/90 shadow-sm">
+                    {/* Discount Badge - Enhanced */}
+                    <div className="absolute top-6 left-6 bg-gradient-to-r from-red-600 to-pink-600 text-white text-sm font-black px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1">
+                        <span className="text-lg">🔥</span>
+                        <span>{discount}% OFF</span>
+                    </div>
+
+                    {/* Share Button - Enhanced */}
+                    <div className="absolute top-6 right-6">
+                        <Button size="icon" variant="secondary" className="rounded-full h-10 w-10 bg-white/95 backdrop-blur shadow-lg hover:bg-white border border-gray-200">
                             <Share2 className="w-4 h-4 text-gray-700" />
                         </Button>
                     </div>
                 </div>
 
-                <div className="p-5 pb-24">
-                    {/* Title & Price */}
-                    <div className="flex justify-between items-start mb-2">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-900 leading-tight mb-1">
-                                {getProductName(product, language)}
-                            </h2>
-                            <p className="text-sm text-gray-500 font-medium">{product.unit}</p>
+                {/* Content Container with better spacing */}
+                <div className="p-6 pb-28 space-y-6">
+                    {/* Title & Unit - Enhanced */}
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold text-gray-900 leading-tight">
+                            {getProductName(product, language)}
+                        </h2>
+                        <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-xs font-medium">
+                                {product.unit}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs font-medium text-green-700 border-green-200 bg-green-50">
+                                In Stock
+                            </Badge>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3 mb-6">
-                        <span className="text-2xl font-black text-gray-900">₹{product.pricePerUnit}</span>
-                        <span className="text-sm text-gray-400 line-through">₹{originalPrice}</span>
+                    {/* Price Section - Enhanced */}
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-4">
+                        <div className="flex items-baseline gap-3">
+                            <span className="text-3xl font-black text-gray-900">₹{product.pricePerUnit}</span>
+                            <span className="text-lg text-gray-400 line-through">₹{originalPrice}</span>
+                            <span className="text-sm font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                                Save ₹{originalPrice - product.pricePerUnit}
+                            </span>
+                        </div>
                     </div>
 
-                    {/* Cut Vegetable Toggle */}
+                    {/* Cut Vegetable Toggle - Enhanced */}
                     {product.isCutVegetable && (
-                        <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg mb-6 flex items-center justify-between">
-                            <div className="flex flex-col">
-                                <span className="text-sm font-bold text-orange-900">Need Cut Vegetables?</span>
-                                <span className="text-xs text-orange-700">Pre-washed & diced (+₹{product.cutCharge})</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className={cn("text-xs font-bold transition-colors", !isCutSelected ? "text-gray-900" : "text-gray-400")}>NO</span>
-                                <button
-                                    className={cn(
-                                        "w-10 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out relative",
-                                        isCutSelected ? "bg-orange-500" : "bg-gray-300"
-                                    )}
-                                    onClick={() => setIsCutSelected(!isCutSelected)}
-                                >
-                                    <div className={cn(
-                                        "bg-white w-4 h-4 rounded-full shadow-sm transform transition-transform duration-200",
-                                        isCutSelected ? "translate-x-4" : "translate-x-0"
-                                    )} />
-                                </button>
-                                <span className={cn("text-xs font-bold transition-colors", isCutSelected ? "text-gray-900" : "text-gray-400")}>YES</span>
+                        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-200 p-4 rounded-2xl">
+                            <div className="flex items-center justify-between">
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">✂️</span>
+                                        <span className="text-base font-bold text-orange-900">Cut & Cleaned</span>
+                                    </div>
+                                    <span className="text-xs text-orange-700">Pre-washed & diced • +₹{product.cutCharge}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={cn("text-xs font-bold transition-colors", !isCutSelected ? "text-gray-900" : "text-gray-400")}>NO</span>
+                                    <button
+                                        className={cn(
+                                            "w-12 h-7 rounded-full p-1 transition-all duration-200 ease-in-out relative shadow-inner",
+                                            isCutSelected ? "bg-orange-500" : "bg-gray-300"
+                                        )}
+                                        onClick={() => setIsCutSelected(!isCutSelected)}
+                                    >
+                                        <div className={cn(
+                                            "bg-white w-5 h-5 rounded-full shadow-md transform transition-transform duration-200",
+                                            isCutSelected ? "translate-x-5" : "translate-x-0"
+                                        )} />
+                                    </button>
+                                    <span className={cn("text-xs font-bold transition-colors", isCutSelected ? "text-gray-900" : "text-gray-400")}>YES</span>
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* Description */}
-                    <div className="space-y-3">
-                        <h3 className="font-bold text-gray-900">Product Details</h3>
-                        <p className="text-sm text-gray-600 leading-relaxed">
-                            {product.description || `Fresh and high-quality ${getProductName(product, language)} sourced directly from local farms. We ensure the best quality and freshness for your daily needs.`}
-                        </p>
+                    {/* Product Details - Enhanced */}
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                <span>📋</span>
+                                Product Details
+                            </h3>
+                            <p className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                {product.description || `Fresh and high-quality ${getProductName(product, language)} sourced directly from local farms. We ensure the best quality and freshness for your daily needs.`}
+                            </p>
+                        </div>
 
-                        <h3 className="font-bold text-gray-900 pt-2">Shelf Life</h3>
-                        <p className="text-sm text-gray-600">
-                            2-3 days under refrigeration.
-                        </p>
+                        <div className="space-y-2">
+                            <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                <span>🕐</span>
+                                Shelf Life
+                            </h3>
+                            <p className="text-sm text-gray-600 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                                2-3 days under refrigeration
+                            </p>
+                        </div>
                     </div>
                 </div>
 

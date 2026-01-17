@@ -86,48 +86,63 @@ async function main() {
     console.log(`  versionCode: ${current.versionCode}`);
     console.log(`  versionName: ${current.versionName}\n`);
 
-    console.log('What type of update is this?');
-    console.log('  1. Patch (bug fixes)     - e.g., 1.0.0 → 1.0.1');
-    console.log('  2. Minor (new features)  - e.g., 1.0.0 → 1.1.0');
-    console.log('  3. Major (breaking changes) - e.g., 1.0.0 → 2.0.0');
-    console.log('  4. Custom version');
-    console.log('  5. Cancel\n');
-
-    const choice = await question('Enter choice (1-5): ');
+    // Check for CLI argument
+    const args = process.argv.slice(2);
+    const argType = args[0] ? args[0].toLowerCase() : null;
 
     let newVersionCode = current.versionCode + 1;
     let newVersionName;
+    let shouldUpdate = false;
 
-    switch (choice.trim()) {
-        case '1':
-            newVersionName = incrementVersion(current.versionName, 'patch');
-            break;
-        case '2':
-            newVersionName = incrementVersion(current.versionName, 'minor');
-            break;
-        case '3':
-            newVersionName = incrementVersion(current.versionName, 'major');
-            break;
-        case '4':
-            newVersionName = await question('Enter new version name (e.g., 1.2.3): ');
-            break;
-        case '5':
-            console.log('Cancelled.');
-            rl.close();
-            return;
-        default:
-            console.log('Invalid choice. Cancelled.');
-            rl.close();
-            return;
+    if (argType && ['patch', 'minor', 'major'].includes(argType)) {
+        console.log(`🤖 Auto-detect argument: ${argType}`);
+        newVersionName = incrementVersion(current.versionName, argType);
+        shouldUpdate = true; // Auto-confirm in auto mode
+    } else {
+        // Interactive Mode
+        console.log('What type of update is this?');
+        console.log('  1. Patch (bug fixes)     - e.g., 1.0.0 → 1.0.1');
+        console.log('  2. Minor (new features)  - e.g., 1.0.0 → 1.1.0');
+        console.log('  3. Major (breaking changes) - e.g., 1.0.0 → 2.0.0');
+        console.log('  4. Custom version');
+        console.log('  5. Cancel\n');
+
+        const choice = await question('Enter choice (1-5): ');
+
+        switch (choice.trim()) {
+            case '1':
+                newVersionName = incrementVersion(current.versionName, 'patch');
+                break;
+            case '2':
+                newVersionName = incrementVersion(current.versionName, 'minor');
+                break;
+            case '3':
+                newVersionName = incrementVersion(current.versionName, 'major');
+                break;
+            case '4':
+                newVersionName = await question('Enter new version name (e.g., 1.2.3): ');
+                break;
+            case '5':
+                console.log('Cancelled.');
+                rl.close();
+                return;
+            default:
+                console.log('Invalid choice. Cancelled.');
+                rl.close();
+                return;
+        }
     }
 
     console.log(`\n📝 New Version:`);
     console.log(`  versionCode: ${current.versionCode} → ${newVersionCode}`);
     console.log(`  versionName: ${current.versionName} → ${newVersionName}\n`);
 
-    const confirm = await question('Update versions? (y/n): ');
+    if (!shouldUpdate) {
+        const confirm = await question('Update versions? (y/n): ');
+        shouldUpdate = (confirm.toLowerCase() === 'y' || confirm.toLowerCase() === 'yes');
+    }
 
-    if (confirm.toLowerCase() === 'y' || confirm.toLowerCase() === 'yes') {
+    if (shouldUpdate) {
         updateBuildGradle(newVersionCode, newVersionName);
         updatePackageJson(newVersionName);
 
@@ -135,10 +150,14 @@ async function main() {
         console.log('📱 Updated files:');
         console.log('  - android/app/build.gradle');
         console.log('  - package.json\n');
-        console.log('🚀 Next steps:');
-        console.log('  1. npm run build');
-        console.log('  2. npx cap sync android');
-        console.log('  3. cd android && ./gradlew assembleRelease\n');
+
+        // Only show next steps if running standalone, not if auto
+        if (!argType) {
+            console.log('🚀 Next steps:');
+            console.log('  1. npm run build');
+            console.log('  2. npx cap sync android');
+            console.log('  3. cd android && ./gradlew assembleRelease\n');
+        }
     } else {
         console.log('Cancelled.');
     }

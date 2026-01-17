@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase';
 import { useRouter } from 'next/navigation';
@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/context/language-context';
 import { t } from '@/lib/translations';
 import ProductDetailsSheet from '@/components/product-details-sheet';
+import { ArrowUp } from 'lucide-react';
 
 export interface CategoryData {
     id: string;
@@ -47,6 +48,8 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id || 'all');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [showScrollTop, setShowScrollTop] = useState(false);
+    const mainContentRef = useRef<HTMLDivElement>(null);
 
     // Handle initial category selection
     useEffect(() => {
@@ -147,6 +150,23 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
 
     }, [categories, searchQuery]);
 
+    // Scroll tracking for scroll-to-top button
+    useEffect(() => {
+        const mainContent = mainContentRef.current;
+        if (!mainContent) return;
+
+        const handleScroll = () => {
+            setShowScrollTop(mainContent.scrollTop > 300);
+        };
+
+        mainContent.addEventListener('scroll', handleScroll);
+        return () => mainContent.removeEventListener('scroll', handleScroll);
+    }, []);
+
+    const scrollToTop = () => {
+        mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     return (
         <div className="flex flex-col min-h-screen bg-gray-50 text-foreground pb-20 overflow-hidden sm:pb-0">
             <Header user={user || null} onLogout={handleLogout} cartCount={cartItemCount} notifications={[]} onCartClick={() => setCartOpen(true)} />
@@ -215,7 +235,7 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
 
             <div className="flex flex-1 overflow-hidden h-full">
                 {/* Main Content - Full Width now */}
-                <main className="flex-1 h-full overflow-y-auto bg-gray-50/50 p-3 pb-32">
+                <main ref={mainContentRef} className="flex-1 h-full overflow-y-auto bg-gray-50/50 p-3 pb-32 relative">
                     {loading ? (
                         <div className="grid grid-cols-2 gap-3">
                             {Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)}
@@ -227,7 +247,6 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                                     {/* Offset increased for sticky header */}
                                     <div className="flex items-center justify-between mb-3 px-1">
                                         <h2 className="text-lg font-bold text-gray-800">{cat.name}</h2>
-                                        <span className="text-xs font-medium text-green-600 hidden sm:block">See all</span>
                                     </div>
                                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                                         {cat.products.map(product => {
@@ -278,6 +297,17 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                 updateCartQuantity={updateCartQuantity}
                 clearCart={clearCart}
             />
+
+            {/* Floating Scroll to Top Button */}
+            {showScrollTop && (
+                <button
+                    onClick={scrollToTop}
+                    className="fixed bottom-24 right-4 z-50 p-3 bg-primary text-white rounded-full shadow-lg hover:bg-primary/90 transition-all active:scale-95 animate-in fade-in slide-in-from-bottom-4"
+                    aria-label="Scroll to top"
+                >
+                    <ArrowUp className="h-6 w-6" />
+                </button>
+            )}
         </div>
     );
 }

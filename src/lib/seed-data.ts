@@ -160,10 +160,10 @@ export const products: Product[] = rawProducts.map((p, index) => {
 
 
 export const areas: Area[] = [
-    { id: 'area_1', name: 'New Nallakunta', defaultSlots: ['7-9 AM', '5-7 PM'] },
-    { id: 'area_2', name: 'Vidya Nagar', defaultSlots: ['7-9 AM', '5-7 PM'] },
-    { id: 'area_3', name: 'Amberpet', defaultSlots: ['9-11 AM', '7-9 PM'] },
-    { id: 'area_4', name: 'Himayath Nagar', defaultSlots: ['9-11 AM', '7-9 PM'] },
+    { id: 'area_1', name: 'New Nallakunta', defaultSlots: ['7-9 AM', '5-7 PM'], pincode: '500044' },
+    { id: 'area_2', name: 'Vidya Nagar', defaultSlots: ['7-9 AM', '5-7 PM'], pincode: '500044' },
+    { id: 'area_3', name: 'Amberpet', defaultSlots: ['9-11 AM', '7-9 PM'], pincode: '500013' },
+    { id: 'area_4', name: 'Himayath Nagar', defaultSlots: ['9-11 AM', '7-9 PM'], pincode: '500029' },
 ];
 
 

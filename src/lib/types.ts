@@ -29,6 +29,7 @@ export interface User {
   landmark?: string;
   createdAt: Date;
   preference?: 'vegetables' | 'fruits' | 'both';
+  notifications?: NotificationPreferences;
 }
 
 export interface Product {
@@ -48,12 +49,15 @@ export interface Product {
   isCutVegetable?: boolean;
   cutCharge?: number;
   description?: string;
+  originalPrice?: number;
+  isNew?: boolean;
 }
 
 export interface Area {
   id: string;
   name: string;
   defaultSlots: string[];
+  pincode?: string; // Pincode for the area
 }
 
 export interface OrderItem {
@@ -131,6 +135,22 @@ export interface Notification {
 
 export interface OrderCounter {
   lastId: number;
+}
+
+export interface PaymentMethod {
+  id: string;
+  type: 'card' | 'upi';
+  last4?: string;
+  upiId?: string;
+  isDefault: boolean;
+  brand?: string;
+}
+
+export interface NotificationPreferences {
+  orderUpdates: boolean;
+  promotions: boolean;
+  deliveryAlerts: boolean;
+  emailNotifications: boolean;
 }
 
 export interface Coupon {

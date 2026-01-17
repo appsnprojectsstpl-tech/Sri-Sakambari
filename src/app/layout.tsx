@@ -10,6 +10,7 @@ import FlyToCartOverlay from '@/components/fly-to-cart-overlay';
 import CrashReporter from '@/components/crash-reporter';
 import { BottomNav } from '@/components/bottom-nav';
 import AuthGuard from '@/components/auth-guard';
+import ServiceWorkerRegister from '@/components/service-worker-register';
 
 export const metadata: Metadata = {
   title: 'Sri Sakambari',
@@ -34,6 +35,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
       </head>
       <body
+        suppressHydrationWarning
         className={cn(
           'min-h-screen bg-background antialiased',
           outfit.className,
@@ -50,6 +52,7 @@ export default function RootLayout({
             <LanguageProvider>
               <FlyToCartProvider>
                 <CrashReporter />
+                <ServiceWorkerRegister />
                 <AuthGuard>
                   <FlyToCartOverlay />
                   {children}

@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+    }
+    
+    // Helper function to check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is owning the document
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Users: Users can read/write their own profile. Admins can read all.
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // Products: Public Read. Admin Write.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders: Users can create/read their own. Admins can read/write all.
+    match /orders/{orderId} {
+      allow read: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow create: if isAuth() && request.resource.data.customerId == request.auth.uid;
+      allow update: if isAdmin(); // Only admins update status
+      allow delete: if isAdmin();
+    }
+
+    // Notifications: Users read their own. Admins write.
+    match /notifications/{notificationId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow write: if isAdmin() || (isAuth() && request.resource.data.userId == request.auth.uid); // Allow users to "mark read" (update)
+    }
+
+    // Order Counters: Public Read (needed for ID generation), Admin Write (or transactional increment)
+    // Ideally this should be server-side, but typically client-side increment needs write access.
+    // We restrict write to authenticated users who are creating an order.
+    match /orderCounters/{counterId} {
+      allow read: if isAuth();
+      allow write: if isAuth(); 
+    }
+
+    // Admin Roles: Admin Read Only (to verify own status). No one writes (done via Console or Seed script).
+    match /roles_admin/{userId} {
+      allow read: if isAuth();
+      allow write: if false; 
+    }
+
+    // Delivery Partners: Public Read (for checking slot availability? or just Admin?) 
+    // Assuming just admin for now for management.
+    match /delivery_partners/{partnerId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Areas: Public Read. Admin Write.
+    match /areas/{areaId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

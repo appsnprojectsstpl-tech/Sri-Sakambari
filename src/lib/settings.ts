@@ -5,5 +5,8 @@ export const settings = {
     newNallakuntaLatLng: {
         lat: 17.4087,
         lng: 78.5135
-    }
+    },
+    defaultCutCharge: 10,
+    cutLabel: 'Cut & Cleaned',
+    ownerPhone: '919603791432'
 }

@@ -108,7 +108,7 @@ export default function DeliveryView({ user: deliveryUser }: { user: User }) {
     const completedOrders = assignedOrders?.filter(o => o.status === 'DELIVERED' || o.status === 'CANCELLED');
 
     return (
-        <div className="container mx-auto px-4 py-8">
+        <div className="container mx-auto px-4 py-8 pb-24">
             <h2 className="text-3xl font-bold font-headline mb-6">{t('myDeliveries', language)}</h2>
             <Tabs defaultValue="in-progress" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">

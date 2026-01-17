@@ -1,3 +1,4 @@
+'use client';
 
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -65,29 +66,55 @@ export default function ProductCard({
 
   // Price formatting
   const price = product.pricePerUnit;
-  // Mock standard price if needed, or just hide discount as requested.
-  // User requested "Remove 15% Off labels". So we show just the current price.
+  const originalPrice = product.originalPrice || 0;
+  const discountPercentage = originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
+
+  // New check (simple logic: explicit flag or created within 7 days if we had real dates, but let's stick to flag or random for demo if needed)
+  const isNew = product.isNew;
 
   return (
     <div
       onClick={onClick}
-      className="relative flex flex-col w-full bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm transition-all active:scale-[0.98]"
+      className={`relative flex flex-col w-full bg-white rounded-2xl overflow-hidden border transition-all active:scale-[0.98] ${!product.isActive ? 'border-gray-200' : 'border-gray-100 shadow-sm'}`}
     >
       {/* Image Container */}
-      <div className="relative w-full aspect-[4/3] bg-gray-50 p-3 flex items-center justify-center">
+      <div className="relative w-full aspect-[4/3] bg-gray-50 p-3 flex items-center justify-center overflow-hidden">
         <Image
           src={product.imageUrl || `https://picsum.photos/seed/${product.id}/400/300`}
           alt={product.name}
           fill
-          className="object-contain mix-blend-multiply transition-transform hover:scale-105"
+          className={cn("object-contain mix-blend-multiply transition-transform hover:scale-105", !product.isActive && "grayscale opacity-50")}
           sizes="(max-width: 768px) 50vw, 33vw"
           priority={false}
         />
 
+        {/* Badges */}
+        <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+          {discountPercentage > 0 && product.isActive && (
+            <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in">
+              {discountPercentage}% OFF
+            </span>
+          )}
+          {isNew && product.isActive && (
+            <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in delay-75">
+              NEW
+            </span>
+          )}
+        </div>
+
+        {/* OOS Overlay */}
+        {!product.isActive && (
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] flex items-center justify-center z-20">
+            <span className="bg-gray-900 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg transform -rotate-12 border-2 border-white">
+              OUT OF STOCK
+            </span>
+          </div>
+        )}
+
       </div>
 
       {/* Content */}
-      <div className="flex flex-col p-2.5 flex-grow">
+      <div className={cn("flex flex-col p-2.5 flex-grow", !product.isActive && "opacity-60")}>
         <div className="mb-0.5">
           <h3 className="font-bold text-gray-900 text-[13px] sm:text-base leading-tight line-clamp-2 min-h-[2.4em]">
             {getProductName(product, language)}
@@ -100,11 +127,19 @@ export default function ProductCard({
 
           {/* Price */}
           <div className="flex flex-col">
-            <span className="text-base sm:text-lg font-extrabold text-primary">
-              ₹{price}
-            </span>
+            <div className='flex items-baseline gap-1.5'>
+              <span className="text-base sm:text-lg font-extrabold text-primary">
+                ₹{price}
+              </span>
+              {originalPrice > price && (
+                <span className="text-xs text-muted-foreground line-through decoration-red-500/50">
+                  ₹{originalPrice}
+                </span>
+              )}
+            </div>
+
             {/* Cut Option - Micro Button */}
-            {product.category === 'Vegetables' && (
+            {product.category === 'Vegetables' && product.isActive && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -122,7 +157,9 @@ export default function ProductCard({
           </div>
 
           {/* Add Button */}
-          {cartQuantity === 0 ? (
+          {!product.isActive ? (
+            <div className='h-8 sm:h-9' /> // Spacer to keep height consistent
+          ) : cartQuantity === 0 ? (
             <Button
               size="icon"
               onClick={handleAddClick}

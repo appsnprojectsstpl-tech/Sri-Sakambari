@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sakambari-cache-v2';
+const CACHE_NAME = 'sakambari-cache-v3';
 const OFFLINE_URL = '/offline.html';
 
 // Essential static assets

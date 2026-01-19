@@ -9,8 +9,8 @@ console.log('  1. Bump version');
 console.log('  2. Build web app');
 console.log('  3. Sync with Capacitor');
 console.log('  4. Build signed APK');
-console.log('  5. Upload to Firebase Storage');
-console.log('  6. Generate and upload version.json');
+console.log('  5. Upload to GitHub and Firebase Storage');
+console.log('  6. Deploy to Firebase Hosting');
 console.log('');
 
 // Check for auto flag
@@ -63,33 +63,37 @@ function runRelease(bumpType, releaseNotes, forceUpdate) {
     try {
         // Step 1: Bump version (if not skipped)
         if (bumpType !== 'skip') {
-            console.log(`📈 Step 1/5: Bumping version (${bumpType})...`);
+            console.log(`📈 Step 1/6: Bumping version (${bumpType})...`);
             execSync(`node scripts/version-bump.js ${bumpType}`, { stdio: 'inherit' });
             console.log('✅ Version bumped\n');
         } else {
-            console.log('⏭️  Step 1/5: Skipping version bump\n');
+            console.log('⏭️  Step 1/6: Skipping version bump\n');
         }
 
         // Step 2: Build web app
-        console.log('🌐 Step 2/5: Building web app...');
+        console.log('🌐 Step 2/6: Building web app...');
         execSync('npm run build', { stdio: 'inherit' });
         console.log('✅ Web app built\n');
 
         // Step 3: Sync with Capacitor
-        console.log('🔄 Step 3/5: Syncing with Capacitor...');
+        console.log('🔄 Step 3/6: Syncing with Capacitor...');
         execSync('npx cap sync android', { stdio: 'inherit' });
         console.log('✅ Capacitor synced\n');
 
         // Step 4: Build APK
-        console.log('📱 Step 4/5: Building signed APK...');
+        console.log('📱 Step 4/6: Building signed APK...');
         execSync('cd android && gradlew.bat assembleRelease', { stdio: 'inherit', shell: true });
         console.log('✅ APK built\n');
 
         // Step 5: Upload to GitHub Releases
-        console.log('☁️  Step 5/5: Initiating GitHub Release...');
-
-        // Executes the verified GitHub automation script
+        console.log('☁️  Step 5/6: Initiating GitHub Release...');
         execSync('node scripts/publish-github.js', { stdio: 'inherit' });
+
+        // Step 6: Deploy to Firebase Hosting
+        console.log('🔥 Step 6/6: Deploying to Firebase Hosting...');
+        execSync('npx firebase deploy', { stdio: 'inherit' });
+        console.log('✅ Deployed to Firebase\n');
+
     } catch (error) {
         console.error('\n❌ Release failed:', error.message);
         console.log('\n💡 Troubleshooting:');

@@ -1,6 +1,6 @@
 
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -58,8 +58,8 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 import Image from 'next/image';
-import { useAuth, useFirestore, createUser, useCollection, createNotification } from '@/firebase';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useAuth, useFirestore, createUser, useCollection, createNotification, storage } from '@/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
 import { doc, setDoc, addDoc, collection, serverTimestamp, deleteDoc, writeBatch, getDocs, getDoc, query, orderBy, limit, startAfter, where, documentId } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -77,6 +77,11 @@ import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
 import ProductImageGallery from './product-image-gallery';
 import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
+import CouponManager from '@/components/admin/coupon-manager';
+import DashboardTab from '@/components/admin/dashboard-tab';
+import InventoryTab from '@/components/admin/inventory-tab';
+import { OrderFiltersBar, OrderFilters } from '@/components/admin/order-filters-bar';
+import { filterOrders, getUniqueAreas } from '@/lib/order-utils';
 
 
 const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
@@ -123,7 +128,17 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { language } = useLanguage();
-  const [activeTab, setActiveTab] = useState("products");
+  const [activeTab, setActiveTab] = useState("dashboard");
+
+  // Order Filters State
+  const [orderFilters, setOrderFilters] = useState<OrderFilters>({
+    searchTerm: '',
+    status: 'all',
+    paymentMode: 'all',
+    area: 'all',
+    dateFrom: '',
+    dateTo: ''
+  });
 
   // Pagination State
   const PRODUCTS_PER_PAGE = 10;
@@ -161,14 +176,27 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     await batch.commit();
   };
 
-  // Products: Fetch on 'products' tab (WhatsApp fetches its own full list)
-  const shouldFetchProducts = activeTab === 'products';
+  // Products: Fetch on 'products', 'inventory', 'orders', 'dashboard', 'whatsapp'
+  // Inventory needs FULL list for client-side search and stats.
+  // Dashboard needs FULL list for stats (or we trust client-side calc).
+  // Orders needs FULL list for mapping IDs to names (unless we fix order fetching).
+  // Whatsapp needs FULL list for selector.
 
-  const productConstraints = [
+  const shouldFetchProducts = ['products', 'inventory', 'orders', 'dashboard', 'whatsapp'].includes(activeTab);
+
+  // If we are on 'products' tab, we use pagination.
+  // For other tabs (Inventory, Stats, etc.), we likely need ALL products for correct stats/search.
+  // Fetching all (e.g. up to 1000) is safer for those views until we implement server-side search for them.
+  const isPaginationEnabled = activeTab === 'products';
+
+  const productConstraints = isPaginationEnabled ? [
     ['orderBy', 'name', 'asc'],
     ['orderBy', 'id', 'asc'],
     ['limit', PRODUCTS_PER_PAGE],
     ...(pageIndex > 0 && cursors[pageIndex - 1] ? [['startAfter', ...cursors[pageIndex - 1]]] : [])
+  ] : [
+    ['orderBy', 'name', 'asc'],
+    ['limit', 1000] // Fetch effectively all for Inventory/Dashboard
   ];
 
   const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products', {
@@ -200,15 +228,26 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [ordersPageIndex, setOrdersPageIndex] = useState(0);
   const [ordersCursors, setOrdersCursors] = useState<any[][]>([]);
 
-  const orderConstraints = [
-    ['orderBy', 'createdAt', 'desc'],
-    ['limit', ORDERS_PER_PAGE],
-    ...(ordersPageIndex > 0 && ordersCursors[ordersPageIndex - 1] ? [['startAfter', ...ordersCursors[ordersPageIndex - 1]]] : [])
-  ];
+  // If we are on the 'orders' tab, we use pagination (limit 20).
+  // If we are on the 'dashboard' tab, we need ALL recent orders for analytics (e.g., limit 1000).
+  const isOrdersPaginationEnabled = activeTab === 'orders';
+
+  const orderConstraints = useMemo(() => {
+    return isOrdersPaginationEnabled ? [
+      ['orderBy', 'createdAt', 'desc'],
+      ['limit', ORDERS_PER_PAGE],
+      ...(ordersPageIndex > 0 && ordersCursors[ordersPageIndex - 1] ? [['startAfter', ...ordersCursors[ordersPageIndex - 1]]] : [])
+    ] : [
+      ['orderBy', 'createdAt', 'desc'],
+      ['limit', 1000] // Fetch effectively all for Dashboard stats
+    ];
+  }, [isOrdersPaginationEnabled, ordersPageIndex, ordersCursors]);
+
+  const shouldFetchOrders = activeTab === 'orders' || activeTab === 'dashboard';
 
   const { data: orders, loading: ordersLoading, error: ordersError } = useCollection<Order>('orders', {
     constraints: orderConstraints as any,
-    disabled: activeTab !== 'orders'
+    disabled: !shouldFetchOrders
   });
 
   const handleNextPageOrders = () => {
@@ -240,6 +279,11 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     disabled: activeTab !== 'coupons'
   });
 
+  // Filtered orders based on search and filters
+  const filteredOrders = useMemo(() => {
+    if (!orders) return [];
+    return filterOrders(orders, orderFilters, users || undefined);
+  }, [orders, orderFilters, users]);
 
 
   const [isProductDialogOpen, setProductDialogOpen] = useState(false);
@@ -379,6 +423,31 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!storage) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Storage not configured.' });
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      const timestamp = Date.now();
+      const storageRef = ref(storage, `products/${timestamp}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+
+      setEditingProduct(prev => prev ? { ...prev, imageUrl: url } : null);
+      toast({ title: "Image Uploaded", description: "Image URL updated successfully." });
+    } catch (err: any) {
+      console.error(err);
+      toast({ variant: "destructive", title: "Upload Failed", description: err.message });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handleProductFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firestore || !editingProduct) return;
@@ -465,6 +534,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         name: editingUser.name,
         phone: editingUser.phone,
         role: editingUser.role,
+        address: editingUser.address || '',
+        area: editingUser.area || '',
+        pincode: editingUser.pincode || '',
       }, { merge: true });
 
       if (editingUser.role === 'admin') {
@@ -838,62 +910,6 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setUploadingImage(true);
-    try {
-      // Check if Firebase Storage is configured
-      try {
-        const storage = getStorage();
-        const newImageUrls: string[] = [];
-
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const storageRef = ref(storage, `products/${Date.now()}_${file.name}`);
-          await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(storageRef);
-          newImageUrls.push(url);
-        }
-
-        setEditingProduct(prev => {
-          if (!prev) return { ...initialProductState, imageUrl: newImageUrls[0], images: newImageUrls };
-
-          const existingImages = 'images' in prev && Array.isArray(prev.images) ? prev.images : (prev.imageUrl ? [prev.imageUrl] : []);
-          const updatedImages = [...existingImages, ...newImageUrls];
-
-          return {
-            ...prev,
-            imageUrl: updatedImages[0] || '', // Keep primary image synced
-            images: updatedImages
-          };
-        });
-      } catch (storageError) {
-        // Firebase Storage not configured
-        toast({
-          variant: 'destructive',
-          title: 'Storage Not Configured',
-          description: 'Firebase Storage is not set up. Please use image URLs instead.',
-        });
-        console.error('Firebase Storage error:', storageError);
-      }
-
-      toast({
-        title: t('imageUploaded', language),
-        description: `${newImageUrls.length} image(s) uploaded successfully`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Upload Failed",
-        description: error.message,
-      });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
   const removeImage = (urlToRemove: string) => {
     setEditingProduct(prev => {
       if (!prev) return null;
@@ -1085,7 +1101,9 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </Popover>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full pb-24">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5 h-auto">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-7 h-auto">
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="products">{t('products', language)}</TabsTrigger>
           <TabsTrigger value="orders">{t('orders', language)}</TabsTrigger>
           <TabsTrigger value="subscriptions">{t('subscriptions', language)}</TabsTrigger>
@@ -1093,6 +1111,14 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           <TabsTrigger value="coupons">Coupons</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dashboard">
+          <DashboardTab orders={orders || []} products={products || []} loading={ordersLoading || productsLoading} />
+        </TabsContent>
+
+        <TabsContent value="inventory">
+          <InventoryTab products={products || []} loading={productsLoading} onProductUpdate={forceRefetch} />
+        </TabsContent>
 
         <TabsContent value="products">
           <div className="flex justify-end items-center my-4 gap-2 flex-wrap">
@@ -1203,6 +1229,15 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </TabsContent>
 
         <TabsContent value="orders">
+          {/* Order Filters */}
+          <OrderFiltersBar
+            filters={orderFilters}
+            onFiltersChange={setOrderFilters}
+            areas={getUniqueAreas(orders || [])}
+            totalOrders={orders?.length || 0}
+            filteredCount={filterOrders(orders || [], orderFilters, users || undefined).length}
+          />
+
           <div className="flex justify-end my-4 gap-2">
             <Button variant="outline" onClick={() => setMigrateDialogOpen(true)} disabled={ordersLoading || !orders || !products}>
               <Database className="mr-2 h-4 w-4" /> Migrate Orders
@@ -1215,7 +1250,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           {ordersLoading ? <p>Loading orders...</p> : (
             <>
               <div className="md:hidden space-y-4 mt-4">
-                {(orders || []).map((order) => {
+                {(filteredOrders || []).map((order) => {
                   const customer = users?.find(u => u.id === order.customerId);
                   const partner = users?.find(u => u.id === order.deliveryPartnerId);
                   return (
@@ -1266,7 +1301,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(orders || []).map((order) => {
+                  {(filteredOrders || []).map((order) => {
                     const customer = users?.find(u => u.id === order.customerId);
                     const partner = users?.find(u => u.id === order.deliveryPartnerId);
                     return (
@@ -1592,12 +1627,11 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                     id="imageUpload"
                     type="file"
                     accept="image/*"
-                    multiple
                     className="hidden"
                     onChange={handleImageUpload}
                     disabled={uploadingImage}
                   />
-                  <span className="text-xs text-muted-foreground">(Storage not configured - use URL above)</span>
+                  {uploadingImage && <span className="text-xs text-muted-foreground animate-pulse">Uploading...</span>}
                 </div>
 
                 {/* Image Gallery */}
@@ -1727,6 +1761,25 @@ export default function AdminView({ user: adminUser }: { user: User }) {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-address">Address</Label>
+                  <Input id="edit-address" value={editingUser.address || ''} onChange={(e) => setEditingUser({ ...editingUser, address: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-area">Area</Label>
+                  <Select value={editingUser.area || ''} onValueChange={(value) => setEditingUser({ ...editingUser, area: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Area" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(areas || []).map(a => <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-pincode">Pincode</Label>
+                  <Input id="edit-pincode" value={editingUser.pincode || ''} onChange={(e) => setEditingUser({ ...editingUser, pincode: e.target.value })} />
                 </div>
               </div>
               <DialogFooter>

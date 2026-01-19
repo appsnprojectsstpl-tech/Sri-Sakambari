@@ -197,14 +197,30 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
                         </div>
                         <div className="grid gap-2">
                             <Label>Area</Label>
-                            <Select value={newAddress.area} onValueChange={(v) => setNewAddress({ ...newAddress, area: v })}>
+                            <Select value={newAddress.area === 'Other' || (newAddress.area && !areas?.some(a => a.name === newAddress.area)) ? 'Other' : newAddress.area}
+                                onValueChange={(v) => {
+                                    if (v === 'Other') {
+                                        setNewAddress({ ...newAddress, area: 'Other' });
+                                    } else {
+                                        setNewAddress({ ...newAddress, area: v });
+                                    }
+                                }}>
                                 <SelectTrigger><SelectValue placeholder="Select Area" /></SelectTrigger>
                                 <SelectContent>
                                     {areas?.map(area => (
                                         <SelectItem key={area.id} value={area.name}>{area.name}</SelectItem>
                                     ))}
+                                    <SelectItem value="Other">Other (Custom Area)</SelectItem>
                                 </SelectContent>
                             </Select>
+                            {(newAddress.area === 'Other' || (newAddress.area && !areas?.some(a => a.name === newAddress.area) && newAddress.area !== '')) && (
+                                <Input
+                                    className="mt-2"
+                                    placeholder="Enter your area name"
+                                    value={newAddress.area === 'Other' ? '' : newAddress.area}
+                                    onChange={(e) => setNewAddress({ ...newAddress, area: e.target.value })}
+                                />
+                            )}
                         </div>
                         <div className="grid gap-2">
                             <Label>Pincode</Label>

@@ -51,6 +51,11 @@ export interface Product {
   description?: string;
   originalPrice?: number;
   isNew?: boolean;
+  // Inventory Management
+  stockQuantity?: number;
+  lowStockThreshold?: number;
+  trackInventory?: boolean;
+  lastRestocked?: Date;
 }
 
 export interface Area {
@@ -169,6 +174,20 @@ export interface Coupon {
   createdAt?: any;
 }
 
+export interface StockTransaction {
+  id: string;
+  productId: string;
+  productName: string;
+  type: 'ADD' | 'REMOVE' | 'SET' | 'SALE' | 'CANCEL';
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  reason?: string;
+  orderId?: string;
+  timestamp: Date;
+  userId: string;
+  userName?: string;
+}
 
 // Genkit Flow Types
 export const TranslateProductInputSchema = z.object({

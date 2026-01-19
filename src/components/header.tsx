@@ -17,6 +17,9 @@ import {
 import { useLanguage } from '@/context/language-context';
 import { t } from '@/lib/translations';
 import { haptics, ImpactStyle } from '@/lib/haptics';
+import { initializeFirebase } from '@/firebase';
+import { doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
 
 interface HeaderProps {
   user: User | null;
@@ -28,9 +31,47 @@ interface HeaderProps {
 
 export default function Header({ user, onLogout, cartCount, notifications, onCartClick }: HeaderProps) {
   const { language, setLanguage } = useLanguage();
+  const { toast } = useToast();
   const { theme, setTheme } = useTheme();
   const unreadNotifications = notifications.filter(n => !n.isRead);
   const isCustomer = !user || user.role === 'customer';
+  const { messaging, firestore } = initializeFirebase();
+
+  const markAsRead = async (id: string) => {
+    if (!user) return;
+    try {
+      const notificationRef = doc(firestore, 'users', user.id, 'notifications', id);
+      await updateDoc(notificationRef, { isRead: true });
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!user) return;
+    try {
+      const batch = writeBatch(firestore);
+      notifications.forEach(n => {
+        if (!n.isRead) {
+          const ref = doc(firestore, 'users', user.id, 'notifications', n.id);
+          batch.update(ref, { isRead: true });
+        }
+      });
+      await batch.commit();
+      toast({ title: 'Notifications Cleared', description: 'All notifications marked as read.' });
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
+    }
+  };
+
+  const handleNotificationClick = async (notification: Notification) => {
+    if (!notification.isRead) {
+      await markAsRead(notification.id);
+    }
+    if (notification.link) {
+      window.location.href = notification.link;
+    }
+  };
 
   return (
     // Mobile-first: Fixed height, clear z-indexing, solid background for readability
@@ -96,19 +137,41 @@ export default function Header({ user, onLogout, cartCount, notifications, onCar
                   <span className="sr-only">Notifications</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                <DropdownMenuLabel className="p-4 text-base">{t('notifications', language)}</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-[300px] sm:w-80">
+                <div className="flex items-center justify-between p-4 pb-2">
+                  <DropdownMenuLabel className="p-0 text-base">{t('notifications', language)}</DropdownMenuLabel>
+                  {unreadNotifications.length > 0 && (
+                    <Button variant="ghost" size="sm" className="h-auto px-2 text-xs" onClick={clearAllNotifications}>
+                      Clear all
+                    </Button>
+                  )}
+                </div>
                 <DropdownMenuSeparator />
-                <div className="max-h-[60vh] overflow-y-auto">
-                  {notifications.length > 0 ? (
-                    [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5).map(n => (
-                      <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer">
-                        <p className={`font-semibold text-sm ${!n.isRead ? '' : 'text-muted-foreground'}`}>{n.title}</p>
-                        <p className="text-xs text-muted-foreground">{n.message}</p>
+                <div className="max-h-[300px] overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      No notifications
+                    </div>
+                  ) : (
+                    notifications.map((notification) => (
+                      <DropdownMenuItem
+                        key={notification.id}
+                        className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${!notification.isRead ? 'bg-muted/50' : ''}`}
+                        onClick={() => handleNotificationClick(notification)}
+                      >
+                        <div className="flex w-full justify-between gap-2">
+                          <span className={!notification.isRead ? 'font-semibold' : ''}>
+                            {notification.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(notification.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <span className="text-sm text-muted-foreground line-clamp-2">
+                          {notification.message}
+                        </span>
                       </DropdownMenuItem>
                     ))
-                  ) : (
-                    <p className="p-4 text-center text-sm text-muted-foreground">{t('noNotifications', language)}</p>
                   )}
                 </div>
               </DropdownMenuContent>

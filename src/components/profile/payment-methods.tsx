@@ -143,7 +143,7 @@ export default function PaymentMethods({ user }: PaymentMethodsProps) {
                                     <Button
                                         size="sm"
                                         variant="ghost"
-                                        onClick={() => handleSetDefault(method.id, methods)}
+                                        onClick={() => handleSetDefault(method.id, methods || [])}
                                     >
                                         Set Default
                                     </Button>

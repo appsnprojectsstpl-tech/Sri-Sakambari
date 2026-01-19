@@ -23,6 +23,7 @@ import { useLanguage } from '@/context/language-context';
 import { t } from '@/lib/translations';
 import ProductDetailsSheet from '@/components/product-details-sheet';
 import { ArrowUp } from 'lucide-react';
+import { useUserNotifications } from '@/hooks/use-user-notifications';
 
 export interface CategoryData {
     id: string;
@@ -167,9 +168,11 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
         mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    const { notifications } = useUserNotifications();
+
     return (
         <div className="flex flex-col min-h-screen bg-gray-50 text-foreground pb-20 overflow-hidden sm:pb-0">
-            <Header user={user || null} onLogout={handleLogout} cartCount={cartItemCount} notifications={[]} onCartClick={() => setCartOpen(true)} />
+            <Header user={user || null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
 
             {/* Sticky Header Group: Search + Horizontal Tabs */}
             <div className="sticky top-[64px] z-30 bg-white/95 backdrop-blur shadow-sm border-b">

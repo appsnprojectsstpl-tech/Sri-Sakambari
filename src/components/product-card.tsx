@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { haptics, ImpactStyle } from '@/lib/haptics';
 import { useFlyToCart } from '@/components/fly-to-cart-context';
 import { cn } from '@/lib/utils';
+import { getStockStatus } from '@/lib/inventory-utils';
 
 interface ProductCardProps {
   product: Product;
@@ -98,6 +99,11 @@ export default function ProductCard({
           {isNew && product.isActive && (
             <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in delay-75">
               NEW
+            </span>
+          )}
+          {product.trackInventory && getStockStatus(product) === 'LOW_STOCK' && product.isActive && (
+            <span className="bg-yellow-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm animate-in zoom-in delay-100">
+              Only {product.stockQuantity} left!
             </span>
           )}
         </div>

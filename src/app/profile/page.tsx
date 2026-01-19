@@ -18,11 +18,17 @@ import dynamic from 'next/dynamic';
 import { doc, getDoc, query, collection, where, documentId, getDocs, updateDoc } from 'firebase/firestore';
 import { chunkArray } from '@/firebase/firestore/utils';
 import { logger, safeLocalStorage } from '@/lib/logger';
-import { User, Package, BarChart3, Heart, Settings, HelpCircle } from 'lucide-react';
+import { User, Package, BarChart3, Heart, Settings, HelpCircle, Download, Ban, Clock } from 'lucide-react';
+import { generateSalesOrderPDF } from '@/lib/pdf-utils';
+import { OrderTimeline } from '@/components/order-timeline';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { serverTimestamp } from 'firebase/firestore';
+import { useUserNotifications } from '@/hooks/use-user-notifications';
 
 // Lazy load components
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
-const UpdateChecker = dynamic(() => import('@/components/profile/update-checker'), { ssr: false });
+const UpdateChecker = dynamic(() => import('@/components/update-checker').then(mod => mod.UpdateChecker), { ssr: false });
 const AnalyticsDashboard = dynamic(() => import('@/components/profile/analytics-dashboard'), { ssr: false });
 const FavoriteProducts = dynamic(() => import('@/components/profile/favorite-products'), { ssr: false });
 const HelpSupport = dynamic(() => import('@/components/profile/help-support'), { ssr: false });
@@ -70,8 +76,20 @@ export default function ProfilePage() {
         }
     };
 
+
+
+    const handleDownloadInvoice = (order: Order) => {
+        // Need products for PDF generation
+        // We can fetch them or pass minimal data. 
+        // For now, let's try to generate with minimal data or fetch standard products.
+        // Actually PDF utils needs products array to find names if not in order items.
+        // Let's pass empty array and rely on fallback names in PDF utils which we saw earlier.
+        generateSalesOrderPDF(order, [], language);
+    };
+
     const handleLogout = async () => {
         if (auth) {
+            safeLocalStorage.removeItem('cart'); // Clear cart on logout
             await signOut(auth);
             router.push('/dashboard');
         }
@@ -93,17 +111,16 @@ export default function ProfilePage() {
                 });
             }));
         } catch (error) {
-            logger.error("Error fetching products for repeat order:", error);
+            console.error("Error fetching products:", error);
             toast({
                 variant: 'destructive',
                 title: 'Error',
-                description: 'Failed to fetch product details. Please try again.',
+                description: 'Failed to fetch product details.',
             });
             return;
         }
 
         const productMap = new Map(fetchedProducts.map(p => [p.id, p]));
-        const unavailableItems: string[] = [];
         const itemsToProcess: CartItem[] = [];
 
         order.items.forEach(item => {
@@ -114,18 +131,11 @@ export default function ProfilePage() {
                     quantity: item.qty,
                     isCut: item.isCut || false
                 });
-            } else {
-                const fallbackName = item.name || (language === 'te' && item.name_te ? item.name_te : 'Unknown Item');
-                unavailableItems.push(product?.name || fallbackName);
             }
         });
 
         if (itemsToProcess.length === 0) {
-            toast({
-                variant: 'destructive',
-                title: 'All items are unavailable',
-                description: `None of the items from this order can be added to your cart.`,
-            });
+            toast({ variant: 'destructive', title: 'Unavailable', description: 'Items are no longer available.' });
             return;
         }
 
@@ -134,10 +144,7 @@ export default function ProfilePage() {
             const currentCartJson = safeLocalStorage.getItem('cart');
             try {
                 currentCart = currentCartJson ? JSON.parse(currentCartJson) : [];
-            } catch (e) {
-                logger.error("Failed to parse cart", e);
-                currentCart = [];
-            }
+            } catch (e) { console.error(e); }
         }
 
         itemsToProcess.forEach(newItem => {
@@ -153,22 +160,47 @@ export default function ProfilePage() {
 
         safeLocalStorage.setItem('cart', JSON.stringify(currentCart));
         window.dispatchEvent(new Event("storage"));
-
-        if (unavailableItems.length > 0) {
-            toast({
-                variant: 'destructive',
-                title: 'Some items are unavailable',
-                description: `The following items could not be added to your cart: ${unavailableItems.join(', ')}`,
-            });
-        } else {
-            toast({
-                title: 'Items Added to Cart',
-                description: 'Items from your previous order have been added to your cart.',
-            });
-        }
-
-        router.push('/dashboard');
     };
+
+    const handleModifyOrder = async (order: Order) => {
+        if (!confirm('To modify this order, we need to cancel it first and add items to your cart. Continue?')) return;
+
+        try {
+            await handledcancelOrder(order.id, false); // Pass false to skip extra confirmation if possible, or just call update
+            await handleRepeatOrder(order);
+            toast({ title: 'Order Ready to Modify', description: 'Items added to cart. Please make changes and checkout again.' });
+            // Small delay to allow storage event to propagate?
+            setTimeout(() => {
+                const cartBtn = document.getElementById('cart-trigger-button');
+                if (cartBtn) cartBtn.click();
+            }, 500);
+        } catch (e) {
+            console.error("Modify failed", e);
+            toast({ variant: 'destructive', title: 'Error', description: 'Failed to modify order.' });
+        }
+    };
+
+    // Helper wrapper for cancel to reuse logic if need be, or just use existing handledcancelOrder
+    // NOTE: The previous code had `handledcancelOrder`. I need to make sure I don't break it. 
+    // I will rewrite `handledcancelOrder` to be reusable or just call the dedicated update logic.
+
+    const handledcancelOrder = async (orderId: string, showConfirm = true) => {
+        if (showConfirm && !confirm('Are you sure you want to cancel this order?')) return;
+        try {
+            await updateDoc(doc(firestore, 'orders', orderId), {
+                status: 'CANCELLED',
+                cancelledAt: serverTimestamp(),
+                cancelledBy: user?.id || 'customer'
+            });
+            if (showConfirm) toast({ title: 'Order Cancelled', description: 'Your order has been cancelled successfully.' });
+        } catch (error) {
+            console.error(error);
+            toast({ variant: 'destructive', title: 'Error', description: 'Failed to cancel order' });
+            throw error; // Propagate for modify
+        }
+    };
+
+
 
     const handleReorderProduct = (productId: string) => {
         // Add single product to cart
@@ -194,6 +226,7 @@ export default function ProfilePage() {
     }
 
     const emptyArray: any[] = [];
+    const { notifications } = useUserNotifications();
     const noop = () => { };
 
     return (
@@ -202,7 +235,7 @@ export default function ProfilePage() {
                 user={user}
                 onLogout={handleLogout}
                 cartCount={0}
-                notifications={emptyArray}
+                notifications={notifications || []}
                 onCartClick={noop}
             />
             <main className="container mx-auto px-4 py-6 pb-24">
@@ -259,39 +292,106 @@ export default function ProfilePage() {
                                 {orders && orders.length > 0 ? (
                                     <Accordion type="single" collapsible className="w-full">
                                         {orders.map(order => (
-                                            <AccordionItem value={order.id} key={order.id}>
-                                                <AccordionTrigger>
-                                                    <div className="flex justify-between w-full pr-4 text-left">
-                                                        <span className="font-medium">Order #{order.id.slice(0, 8)}</span>
-                                                        <Badge>{order.status}</Badge>
-                                                        <span className="text-sm text-muted-foreground">{formatDate(order.createdAt)}</span>
+                                            <AccordionItem value={order.id} key={order.id} className="border rounded-lg mb-4 px-2">
+                                                <AccordionTrigger className="hover:no-underline">
+                                                    <div className="flex flex-col sm:flex-row justify-between w-full pr-4 text-left gap-2 sm:items-center">
+                                                        <div className="flex flex-col">
+                                                            <span className="font-semibold">Order #{order.id.slice(0, 8)}</span>
+                                                            <span className="text-sm text-muted-foreground">{formatDate(order.createdAt)}</span>
+                                                        </div>
+                                                        <Badge variant={order.status === 'CANCELLED' ? 'destructive' : 'outline'} className={order.status === 'CONFIRMED' ? 'bg-green-100 text-green-800' : ''}>
+                                                            {order.status}
+                                                        </Badge>
                                                     </div>
                                                 </AccordionTrigger>
                                                 <AccordionContent>
-                                                    <Table>
-                                                        <TableHeader>
-                                                            <TableRow>
-                                                                <TableHead>Item</TableHead>
-                                                                <TableHead>Qty</TableHead>
-                                                                <TableHead>Price</TableHead>
-                                                            </TableRow>
-                                                        </TableHeader>
-                                                        <TableBody>
-                                                            {order.items.map(item => {
-                                                                const displayName = language === 'te' && item.name_te ? item.name_te : (item.name || 'Item not found');
-                                                                return (
-                                                                    <TableRow key={item.productId}>
-                                                                        <TableCell>{displayName}</TableCell>
-                                                                        <TableCell>{item.qty}</TableCell>
-                                                                        <TableCell>₹{item.priceAtOrder.toFixed(2)}</TableCell>
+                                                    <div className="space-y-6 pt-2">
+                                                        {/* Timeline */}
+                                                        <div className="bg-gray-50 p-4 rounded-lg">
+                                                            <OrderTimeline
+                                                                status={order.status}
+                                                                createdAt={order.createdAt as any}
+                                                                confirmedAt={(order as any).confirmedAt} // Type cast if needed
+                                                                deliveredAt={(order as any).deliveredAt || (order as any).deliveryDate}
+                                                                cancelledAt={(order as any).cancelledAt}
+                                                            />
+                                                        </div>
+
+                                                        {/* Items Table */}
+                                                        <div className="border rounded-md overflow-hidden">
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow className="bg-muted/50">
+                                                                        <TableHead>Item</TableHead>
+                                                                        <TableHead className="text-center">Qty</TableHead>
+                                                                        <TableHead className="text-right">Price</TableHead>
                                                                     </TableRow>
-                                                                );
-                                                            })}
-                                                        </TableBody>
-                                                    </Table>
-                                                    <div className="flex justify-end items-center mt-4 gap-4">
-                                                        <span className="font-bold">Total: ₹{order.totalAmount.toFixed(2)}</span>
-                                                        <Button onClick={() => handleRepeatOrder(order)}>Repeat Order</Button>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {order.items.map(item => {
+                                                                        const displayName = language === 'te' && item.name_te ? item.name_te : (item.name || 'Item not found');
+                                                                        return (
+                                                                            <TableRow key={item.productId}>
+                                                                                <TableCell className="font-medium">
+                                                                                    {displayName}
+                                                                                    {item.isCut && <span className="text-xs text-muted-foreground ml-1">(Cut)</span>}
+                                                                                </TableCell>
+                                                                                <TableCell className="text-center">{item.qty}</TableCell>
+                                                                                <TableCell className="text-right">₹{item.priceAtOrder.toFixed(2)}</TableCell>
+                                                                            </TableRow>
+                                                                        );
+                                                                    })}
+                                                                    <TableRow className="font-bold bg-muted/20">
+                                                                        <TableCell colSpan={2} className="text-right">Total Amount:</TableCell>
+                                                                        <TableCell className="text-right">₹{order.totalAmount.toFixed(2)}</TableCell>
+                                                                    </TableRow>
+                                                                </TableBody>
+                                                            </Table>
+                                                        </div>
+
+                                                        {/* Actions */}
+                                                        <div className="flex flex-wrap justify-end items-center gap-3 border-t pt-4">
+                                                            <Button variant="outline" size="sm" onClick={() => handleDownloadInvoice(order)}>
+                                                                <Download className="w-4 h-4 mr-2" />
+                                                                Invoice
+                                                            </Button>
+
+                                                            {(order.status === 'PENDING' || order.status === 'CONFIRMED') && (
+                                                                <>
+                                                                    <Button variant="outline" size="sm" onClick={() => handleModifyOrder(order)} className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700">
+                                                                        <Edit className="w-4 h-4 mr-2" />
+                                                                        Modify
+                                                                    </Button>
+
+                                                                    <AlertDialog>
+                                                                        <AlertDialogTrigger asChild>
+                                                                            <Button variant="destructive" size="sm">
+                                                                                <Ban className="w-4 h-4 mr-2" />
+                                                                                Cancel Order
+                                                                            </Button>
+                                                                        </AlertDialogTrigger>
+                                                                        <AlertDialogContent>
+                                                                            <AlertDialogHeader>
+                                                                                <AlertDialogTitle>Cancel Order?</AlertDialogTitle>
+                                                                                <AlertDialogDescription>
+                                                                                    Are you sure you want to cancel this order? This action cannot be undone.
+                                                                                </AlertDialogDescription>
+                                                                            </AlertDialogHeader>
+                                                                            <AlertDialogFooter>
+                                                                                <AlertDialogCancel>Keep Order</AlertDialogCancel>
+                                                                                <AlertDialogAction onClick={() => handledcancelOrder(order.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                                    Yes, Cancel
+                                                                                </AlertDialogAction>
+                                                                            </AlertDialogFooter>
+                                                                        </AlertDialogContent>
+                                                                    </AlertDialog>
+                                                                </>
+                                                            )}
+
+                                                            <Button size="sm" onClick={() => handleRepeatOrder(order)}>
+                                                                Repeat Order
+                                                            </Button>
+                                                        </div>
                                                     </div>
                                                 </AccordionContent>
                                             </AccordionItem>

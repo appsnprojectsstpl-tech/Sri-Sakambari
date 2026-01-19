@@ -92,7 +92,7 @@ export default function CartSheet({
   // Free Delivery Nudge Logic (Gamification)
   // Assuming a target like ₹500 for a "Free Delivery" mental goal, or just reusing minOrder functionality visually.
   // Let's use a hypothetical FREE_DELIVERY_THRESHOLD = 500 for the visual nudge.
-  const FREE_DELIVERY_THRESHOLD = 500;
+  const FREE_DELIVERY_THRESHOLD = 100;
   const progressPercentage = Math.min((finalTotal / FREE_DELIVERY_THRESHOLD) * 100, 100);
 
   const handlePlaceOrder = async () => {
@@ -131,6 +131,7 @@ export default function CartSheet({
       });
       return;
     }
+
     if (!isMinOrderMet) {
       toast({
         variant: 'destructive',
@@ -145,24 +146,84 @@ export default function CartSheet({
     try {
       const counterRef = doc(firestore, 'orderCounters', 'main');
 
-      const newOrderId = await runTransaction(firestore, async (transaction) => {
+      const { newOrderId } = await runTransaction(firestore, async (transaction) => {
+        // 1. Read Counter
         const counterDoc = await transaction.get(counterRef);
-
         let lastId = 0;
         if (counterDoc.exists()) {
           lastId = counterDoc.data()?.lastId || 0;
         }
-
         const nextId = lastId + 1;
-        const formattedOrderId = `ORDER-${String(nextId).padStart(4, '0')}`;
+        const generatedId = `ORDER-${String(nextId).padStart(4, '0')}`;
 
+        // 2. Read Product Stocks
+        const productReads = cart.map(item => ({
+          ref: doc(firestore, 'products', item.product.id),
+          qty: item.quantity,
+          name: item.product.name
+        }));
+        const productSnapshots = await Promise.all(productReads.map(p => transaction.get(p.ref)));
+
+        // 3. Verify Stock
+        productSnapshots.forEach((snap, index) => {
+          if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
+          const currentStock = snap.data().stock || 0;
+          if (currentStock < productReads[index].qty) {
+            throw new Error(`Insufficient stock for ${productReads[index].name}. Available: ${currentStock}`);
+          }
+        });
+
+        // 4. Update Counter
         transaction.set(counterRef, { lastId: nextId }, { merge: true });
-        return formattedOrderId;
+
+        // 5. Update Stocks
+        productSnapshots.forEach((snap, index) => {
+          const newStock = (snap.data().stock || 0) - productReads[index].qty;
+          transaction.update(productReads[index].ref, { stock: newStock });
+        });
+
+        // 6. Create Order
+        const orderRef = doc(firestore, 'orders', generatedId);
+        const newOrderData: Order = {
+          id: generatedId,
+          customerId: user.id,
+          name: deliveryInfo.name,
+          phone: deliveryInfo.phone,
+          address: deliveryInfo.address,
+          deliveryPlace: useDifferentDelivery ? deliveryInfo.deliveryPlace : deliveryInfo.address,
+          items: cart.map(item => ({
+            productId: item.product.id,
+            qty: item.quantity,
+            priceAtOrder: item.product.pricePerUnit,
+            isCut: item.isCut,
+            cutCharge: item.isCut ? (item.product.cutCharge || 0) : 0,
+            name: item.product.name,
+            name_te: item.product.name_te,
+            unit: item.product.unit,
+          })),
+          totalAmount: finalTotal,
+          paymentMode: 'COD',
+          orderType: 'ONE_TIME',
+          area: deliveryInfo.area,
+          deliveryDate: new Date().toISOString().split('T')[0],
+          status: 'PENDING',
+          createdAt: serverTimestamp() as Timestamp,
+          agreedToTerms: true,
+          deliverySlot: ''
+        };
+        transaction.set(orderRef, newOrderData);
+
+        return { newOrderId: generatedId };
       });
 
-      const orderRef = doc(firestore, 'orders', newOrderId);
+      // Post-transaction success logic
+      // We reconstruct local state for 'lastPlacedOrder' just for UI purposes if needed, 
+      // but simpler to just use the newOrderId. 
+      // Note: original code updated 'lastPlacedOrder' state. 
+      // We can update it with a mock object or fetch it, but usually not needed for success screen if it just shows ID.
+      // But let's be safe and set it.
 
-      const newOrderData: Order = {
+      const orderPayload: Order = {
         id: newOrderId,
         customerId: user.id,
         name: deliveryInfo.name,
@@ -185,21 +246,18 @@ export default function CartSheet({
         area: deliveryInfo.area,
         deliveryDate: new Date().toISOString().split('T')[0],
         status: 'PENDING',
-        createdAt: serverTimestamp() as Timestamp,
+        createdAt: Timestamp.now(),
         agreedToTerms: true,
         deliverySlot: ''
       };
 
-      await setDoc(orderRef, newOrderData);
-      setLastPlacedOrder(newOrderData);
+      setLastPlacedOrder(orderPayload);
       setLastPlacedOrderProducts(cart.map(item => item.product));
 
       // Notify Admins
       try {
         const adminsSnapshot = await getDocs(query(collection(firestore, 'users'), where('role', '==', 'admin')));
         const adminIds = adminsSnapshot.docs.map(d => d.id);
-
-        // Create notification for each admin
         const batch = writeBatch(firestore);
         adminIds.forEach(adminId => {
           const notifRef = doc(collection(firestore, 'notifications'));
@@ -216,12 +274,9 @@ export default function CartSheet({
         await batch.commit();
       } catch (err) {
         console.error("Failed to notify admins", err);
-        // Don't block success flow
       }
 
-
       const message = t('whatsappOrderConfirmation', language).replace('{ORDER_ID}', newOrderId);
-      // Send to Owner, not the customer (self-chat)
       const whatsappLink = `https://wa.me/${settings.ownerPhone}?text=${encodeURIComponent(message)}`;
       setWhatsappUrl(whatsappLink);
 
@@ -536,13 +591,22 @@ export default function CartSheet({
                     <Label htmlFor="area">{t('area', language)}</Label>
                     <Select
                       onValueChange={value => {
-                        // Find the selected area to get its pincode
-                        const selectedArea = areas?.find(a => a.name === value);
-                        setDeliveryInfo({
-                          ...deliveryInfo,
-                          area: value,
-                          pincode: selectedArea?.pincode || '' // Auto-fill pincode
-                        });
+                        if (value === 'Other') {
+                          alert("For 'Other' areas, delivery charges will be calculated based on the distance from New Nallakunta and informed separately.");
+                          setDeliveryInfo({
+                            ...deliveryInfo,
+                            area: value,
+                            pincode: ''
+                          });
+                        } else {
+                          // Find the selected area to get its pincode
+                          const selectedArea = areas?.find(a => a.name === value);
+                          setDeliveryInfo({
+                            ...deliveryInfo,
+                            area: value,
+                            pincode: selectedArea?.pincode || '' // Auto-fill pincode
+                          });
+                        }
                       }}
                       value={deliveryInfo.area}
                       required
@@ -556,6 +620,9 @@ export default function CartSheet({
                             {area.name} {area.pincode && `(${area.pincode})`}
                           </SelectItem>
                         ))}
+                        <SelectItem value="Other" className="text-base py-3 text-primary font-medium">
+                          Other (Custom Area)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

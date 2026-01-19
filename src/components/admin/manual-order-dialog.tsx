@@ -130,13 +130,9 @@ export default function ManualOrderDialog({ isOpen, onOpenChange, products, area
         setLoading(true);
 
         try {
-            // 1. Get or Create User ID
+            // 1. Get or Create User ID (Pre-transaction)
             let userId = customer?.id;
 
-            // If new user (no ID), create a "Ghost" user or just use a placeholder ID?
-            // Better to create a real user doc so they can login later if they want.
-            // But for manual order, we might not want to enforce Auth account.
-            // Let's create a User Document in Firestore (without Auth) for record keeping.
             if (!userId) {
                 const newUserRef = doc(collection(firestore, 'users'));
                 userId = newUserRef.id;
@@ -148,51 +144,79 @@ export default function ManualOrderDialog({ isOpen, onOpenChange, products, area
                     area: customerArea,
                     role: 'customer',
                     createdAt: serverTimestamp(),
-                    isManual: true // Flag to identify manually created users
+                    isManual: true
                 });
             }
 
-            // 2. Generate Order ID
+            // 2. Transaction: Counter + Order + Stock
             const counterRef = doc(firestore, 'orderCounters', 'main');
+
             const newOrderId = await runTransaction(firestore, async (transaction) => {
+                // 2a. Read Counter
                 const counterDoc = await transaction.get(counterRef);
                 let lastId = counterDoc.exists() ? counterDoc.data().lastId || 0 : 0;
                 const nextId = lastId + 1;
-                transaction.set(counterRef, { lastId: nextId }, { merge: true });
-                return `ORDER-${String(nextId).padStart(4, '0')}`;
-            });
+                const generatedId = `ORDER-${String(nextId).padStart(4, '0')}`;
 
-            // 3. Create Order
-            const orderData: Order = {
-                id: newOrderId,
-                customerId: userId,
-                name: customerName,
-                phone: phone,
-                address: customerAddress,
-                deliveryPlace: customerAddress, // Assume same
-                items: cart.map(item => ({
-                    productId: item.product.id,
+                // 2b. Read Product Stocks
+                const productReads = cart.map(item => ({
+                    ref: doc(firestore, 'products', item.product.id),
                     qty: item.qty,
-                    priceAtOrder: item.product.pricePerUnit,
-                    isCut: item.isCut,
-                    cutCharge: item.isCut ? (item.product.cutCharge || settings.defaultCutCharge) : 0,
-                    name: item.product.name,
-                    name_te: item.product.name_te,
-                    unit: item.product.unit,
-                })),
-                totalAmount: calculateTotal(),
-                paymentMode: 'COD', // Default to COD for manual
-                orderType: 'ONE_TIME',
-                area: customerArea,
-                deliveryDate: new Date().toISOString().split('T')[0], // Today
-                deliverySlot: deliverySlot || 'Any Time',
-                status: 'CONFIRMED', // Auto-confirm manual orders
-                createdAt: serverTimestamp() as Timestamp,
-                agreedToTerms: true,
-                isManual: true
-            };
+                    name: item.product.name
+                }));
+                const productSnapshots = await Promise.all(productReads.map(p => transaction.get(p.ref)));
 
-            await setDoc(doc(firestore, 'orders', newOrderId), orderData);
+                // 2c. Verify Stock
+                productSnapshots.forEach((snap, index) => {
+                    if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
+                    const currentStock = snap.data().stock || 0;
+                    if (currentStock < productReads[index].qty) {
+                        throw new Error(`Insufficient stock for ${productReads[index].name}. Available: ${currentStock}`);
+                    }
+                });
+
+                // 2d. Writes
+                transaction.set(counterRef, { lastId: nextId }, { merge: true });
+
+                productSnapshots.forEach((snap, index) => {
+                    const newStock = (snap.data().stock || 0) - productReads[index].qty;
+                    transaction.update(productReads[index].ref, { stock: newStock });
+                });
+
+                const orderData: Order = {
+                    id: generatedId,
+                    customerId: userId!, // We ensured userId is set above
+                    name: customerName,
+                    phone: phone,
+                    address: customerAddress,
+                    deliveryPlace: customerAddress,
+                    items: cart.map(item => ({
+                        productId: item.product.id,
+                        qty: item.qty,
+                        priceAtOrder: item.product.pricePerUnit,
+                        isCut: item.isCut,
+                        cutCharge: item.isCut ? (item.product.cutCharge || settings.defaultCutCharge) : 0,
+                        name: item.product.name,
+                        name_te: item.product.name_te,
+                        unit: item.product.unit,
+                    })),
+                    totalAmount: calculateTotal(),
+                    paymentMode: 'COD',
+                    orderType: 'ONE_TIME',
+                    area: customerArea,
+                    deliveryDate: new Date().toISOString().split('T')[0],
+                    deliverySlot: deliverySlot || 'Any Time',
+                    status: 'CONFIRMED',
+                    createdAt: serverTimestamp() as Timestamp,
+                    agreedToTerms: true,
+                    isManual: true
+                };
+
+                const orderRef = doc(firestore, 'orders', generatedId);
+                transaction.set(orderRef, orderData);
+
+                return generatedId;
+            });
 
             toast({ title: 'Order Placed!', description: `Order #${newOrderId} created successfully.` });
             onOpenChange(false);

@@ -14,7 +14,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Languages } from 'lucide-react';
-import { FlashDealCard } from '@/components/flash-deal';
 
 const services = [
   'Nurse',
@@ -94,7 +93,7 @@ export default function VisitingCardPage() {
             {t('cutVegAndDoorDelivery', language)} <span className="text-[10px] sm:text-xs opacity-80">({t('conditionsApply', language)})</span>
           </p>
 
-          <FlashDealCard />
+
 
           {/* Native Mobile Carousel - CSS Snap */}
           <div className="w-full overflow-x-auto no-scrollbar snap-x snap-mandatory flex gap-4 px-4 pb-4 -mx-4 sm:grid sm:grid-cols-2 sm:gap-8 sm:w-auto sm:mx-auto sm:pb-0">

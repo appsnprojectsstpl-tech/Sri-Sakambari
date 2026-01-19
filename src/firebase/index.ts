@@ -15,11 +15,14 @@ export { useDoc } from './firestore/use-doc';
 export { useCollection } from './firestore/use-collection';
 
 
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
+
 function initializeFirebase() {
     const apps = getApps();
     const app = apps.length ? apps[0] : initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const firestore = getFirestore(app);
+    const storage = getStorage(app);
     let messaging: Messaging | null = null;
 
     if (typeof window !== 'undefined') {
@@ -30,7 +33,7 @@ function initializeFirebase() {
         });
     }
 
-    return { app, auth, firestore, messaging };
+    return { app, auth, firestore, storage, messaging };
 }
 
 interface CreateUserDto {
@@ -126,5 +129,8 @@ async function createNotification(firestore: Firestore, userId: string, title: s
     });
 }
 
+
+const { storage, auth, firestore } = initializeFirebase();
+export { storage, auth, firestore };
 
 export { initializeFirebase, createUser, createNotification };

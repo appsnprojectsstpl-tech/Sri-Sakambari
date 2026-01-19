@@ -11,6 +11,7 @@ import CrashReporter from '@/components/crash-reporter';
 import { BottomNav } from '@/components/bottom-nav';
 import AuthGuard from '@/components/auth-guard';
 import ServiceWorkerRegister from '@/components/service-worker-register';
+import OrderUpdatesListener from '@/components/order-updates-listener';
 
 export const metadata: Metadata = {
   title: 'Sri Sakambari',
@@ -55,6 +56,7 @@ export default function RootLayout({
                 <ServiceWorkerRegister />
                 <AuthGuard>
                   <FlyToCartOverlay />
+                  <OrderUpdatesListener />
                   {children}
                 </AuthGuard>
               </FlyToCartProvider>

@@ -10,7 +10,9 @@ import {
     DialogFooter,
 } from './ui/dialog';
 import { Button } from './ui/button';
-import { Download, Sparkles } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
+import { Download, Sparkles, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Badge } from './ui/badge';
 
 interface UpdateInfo {
     latestVersion: string;
@@ -25,6 +27,7 @@ export function UpdateChecker() {
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [downloading, setDownloading] = useState(false);
     const [checkingUpdate, setCheckingUpdate] = useState(false);
+    const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
     // Current version from build environment
     const currentVersion = process.env.NEXT_PUBLIC_APP_VERSION || '1.0.0';
@@ -32,15 +35,16 @@ export function UpdateChecker() {
 
     useEffect(() => {
         // Check for updates when app starts
-        checkForUpdates();
+        checkForUpdates(false);
+        setLastChecked(new Date());
 
         // Check again every 6 hours
-        const interval = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
+        const interval = setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
         return () => clearInterval(interval);
     }, []);
 
-    async function checkForUpdates() {
-        setCheckingUpdate(true);
+    async function checkForUpdates(manual: boolean = false) {
+        if (manual) setCheckingUpdate(true);
         try {
             // Fetch version info from GitHub Raw
             const response = await fetch(
@@ -54,10 +58,7 @@ export function UpdateChecker() {
             }
 
             const data: UpdateInfo = await response.json();
-
-            // DEBUG: Show what we found
-            // console.log(`Update Check: Local ${currentVersionCode} vs Remote ${data.versionCode}`);
-
+            setLastChecked(new Date());
 
             // Compare version codes
             // data.versionCode comes from version.json (which comes from build.gradle)
@@ -67,12 +68,14 @@ export function UpdateChecker() {
                 setUpdateAvailable(true);
             } else {
                 console.log('App is up to date.');
-                alert(`App is up to date (v${currentVersionCode})`);
+                if (manual) alert(`App is up to date (v${currentVersionCode})`);
+                setUpdateAvailable(false); // Ensure dialog closes if open
             }
         } catch (error) {
             console.log('Update check failed:', error);
+            if (manual) alert('Failed to check for updates.');
         } finally {
-            setCheckingUpdate(false);
+            if (manual) setCheckingUpdate(false);
         }
     }
 
@@ -107,78 +110,128 @@ export function UpdateChecker() {
         setUpdateAvailable(false);
     }
 
-    if (!updateAvailable || !updateInfo) return null;
+    // Logic for Card UI
+    // If we have updateInfo but updateAvailable is false (meaning up-to-date), we show that.
+    // If updateAvailable is true, the Dialog will appear.
 
     return (
-        <Dialog
-            open={updateAvailable}
-            onOpenChange={(open) => {
-                if (!open && !updateInfo.forceUpdate) {
-                    setUpdateAvailable(false);
-                }
-            }}
-        >
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
+        <>
+            <Card>
+                <CardHeader className="pb-2">
                     <div className="flex items-center gap-2">
-                        <Sparkles className="h-6 w-6 text-primary" />
-                        <DialogTitle className="text-xl">Update Available!</DialogTitle>
+                        <RefreshCw className="h-5 w-5 text-primary" />
+                        <CardTitle className="text-lg">App Updates</CardTitle>
                     </div>
-                    <DialogDescription>
-                        Version {updateInfo.latestVersion} is now available.
-                        {updateInfo.forceUpdate && (
-                            <span className="block mt-2 text-destructive font-semibold">
-                                This update is required to continue.
-                            </span>
-                        )}
-                    </DialogDescription>
-                </DialogHeader>
-
-                <div className="space-y-3 py-4">
-                    <div>
-                        <p className="text-sm font-semibold mb-2">What's New:</p>
-                        <div className="bg-muted p-3 rounded-md">
-                            <p className="text-sm whitespace-pre-line">
-                                {updateInfo.releaseNotes}
-                            </p>
+                    <CardDescription>Check for the latest version</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-muted-foreground">Current Version</p>
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl font-bold">{currentVersion}</span>
+                                {updateAvailable && (
+                                    <Badge variant="destructive" className="animate-pulse">Update</Badge>
+                                )}
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>Current: v{currentVersion}</span>
-                        <span>New: v{updateInfo.latestVersion}</span>
-                    </div>
-                </div>
-
-                <DialogFooter className="flex-col sm:flex-row gap-2">
-                    {!updateInfo.forceUpdate && (
                         <Button
                             variant="outline"
-                            onClick={handleLater}
+                            onClick={() => checkForUpdates(true)}
+                            disabled={checkingUpdate}
                             className="w-full sm:w-auto"
                         >
-                            Later
+                            {checkingUpdate ? (
+                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                            )}
+                            {checkingUpdate ? 'Checking...' : 'Check for Updates'}
                         </Button>
-                    )}
-                    <Button
-                        onClick={handleUpdate}
-                        disabled={downloading}
-                        className="w-full sm:w-auto"
-                    >
-                        {downloading ? (
-                            <>
-                                <Download className="mr-2 h-4 w-4 animate-bounce" />
-                                Downloading...
-                            </>
-                        ) : (
-                            <>
-                                <Download className="mr-2 h-4 w-4" />
-                                Update Now
-                            </>
-                        )}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t flex flex-col sm:flex-row justify-between text-xs text-muted-foreground gap-2">
+                        <span>
+                            Last checked: {lastChecked ? lastChecked.toLocaleString() : 'Never'}
+                        </span>
+                        <span>Build: Production</span>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {updateInfo && (
+                <Dialog
+                    open={updateAvailable}
+                    onOpenChange={(open) => {
+                        if (!open && !updateInfo.forceUpdate) {
+                            setUpdateAvailable(false);
+                        }
+                    }}
+                >
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="h-6 w-6 text-primary" />
+                                <DialogTitle className="text-xl">Update Available!</DialogTitle>
+                            </div>
+                            <DialogDescription>
+                                Version {updateInfo.latestVersion} is now available.
+                                {updateInfo.forceUpdate && (
+                                    <span className="block mt-2 text-destructive font-semibold">
+                                        This update is required to continue.
+                                    </span>
+                                )}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-3 py-4">
+                            <div>
+                                <p className="text-sm font-semibold mb-2">What's New:</p>
+                                <div className="bg-muted p-3 rounded-md">
+                                    <p className="text-sm whitespace-pre-line">
+                                        {updateInfo.releaseNotes}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Current: v{currentVersion}</span>
+                                <span>New: v{updateInfo.latestVersion}</span>
+                            </div>
+                        </div>
+
+                        <DialogFooter className="flex-col sm:flex-row gap-2">
+                            {!updateInfo.forceUpdate && (
+                                <Button
+                                    variant="outline"
+                                    onClick={handleLater}
+                                    className="w-full sm:w-auto"
+                                >
+                                    Later
+                                </Button>
+                            )}
+                            <Button
+                                onClick={handleUpdate}
+                                disabled={downloading}
+                                className="w-full sm:w-auto"
+                            >
+                                {downloading ? (
+                                    <>
+                                        <Download className="mr-2 h-4 w-4 animate-bounce" />
+                                        Downloading...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="mr-2 h-4 w-4" />
+                                        Update Now
+                                    </>
+                                )}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+        </>
     );
 }

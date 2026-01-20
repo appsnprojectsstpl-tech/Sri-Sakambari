@@ -18,7 +18,7 @@ import dynamic from 'next/dynamic';
 import { doc, getDoc, query, collection, where, documentId, getDocs, updateDoc } from 'firebase/firestore';
 import { chunkArray } from '@/firebase/firestore/utils';
 import { logger, safeLocalStorage } from '@/lib/logger';
-import { User, Package, BarChart3, Heart, Settings, HelpCircle, Download, Ban, Clock } from 'lucide-react';
+import { User, Package, BarChart3, Settings, HelpCircle, Download, Ban, Clock, Edit } from 'lucide-react';
 import { generateSalesOrderPDF } from '@/lib/pdf-utils';
 import { OrderTimeline } from '@/components/order-timeline';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -30,7 +30,7 @@ import { useUserNotifications } from '@/hooks/use-user-notifications';
 const AddressManager = dynamic(() => import('@/components/address-manager'), { ssr: false });
 const UpdateChecker = dynamic(() => import('@/components/update-checker').then(mod => mod.UpdateChecker), { ssr: false });
 const AnalyticsDashboard = dynamic(() => import('@/components/profile/analytics-dashboard'), { ssr: false });
-const FavoriteProducts = dynamic(() => import('@/components/profile/favorite-products'), { ssr: false });
+
 const HelpSupport = dynamic(() => import('@/components/profile/help-support'), { ssr: false });
 const EditProfile = dynamic(() => import('@/components/profile/edit-profile'), { ssr: false });
 const NotificationSettings = dynamic(() => import('@/components/profile/notification-settings'), { ssr: false });
@@ -43,6 +43,7 @@ export default function ProfilePage() {
     const router = useRouter();
     const auth = useAuth();
     const firestore = useFirestore();
+    const { notifications } = useUserNotifications();
 
     const { data: rawOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: user?.id ? [['where', 'customerId', '==', user.id]] : [],
@@ -226,7 +227,7 @@ export default function ProfilePage() {
     }
 
     const emptyArray: any[] = [];
-    const { notifications } = useUserNotifications();
+    // const { notifications } = useUserNotifications(); // Moved to top
     const noop = () => { };
 
     return (
@@ -265,10 +266,7 @@ export default function ProfilePage() {
                             <Package className="h-4 w-4 mr-1" />
                             Orders
                         </TabsTrigger>
-                        <TabsTrigger value="favorites" className="text-xs sm:text-sm">
-                            <Heart className="h-4 w-4 mr-1" />
-                            Favorites
-                        </TabsTrigger>
+
                         <TabsTrigger value="settings" className="text-xs sm:text-sm">
                             <Settings className="h-4 w-4 mr-1" />
                             Settings
@@ -404,10 +402,7 @@ export default function ProfilePage() {
                         </Card>
                     </TabsContent>
 
-                    {/* Favorites Tab */}
-                    <TabsContent value="favorites" className="space-y-4">
-                        <FavoriteProducts orders={orders} onReorder={handleReorderProduct} />
-                    </TabsContent>
+
 
                     {/* Settings Tab */}
                     <TabsContent value="settings" className="space-y-4">

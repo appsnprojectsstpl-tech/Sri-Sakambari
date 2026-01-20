@@ -57,7 +57,7 @@ export function UpdateChecker() {
 
             // DEBUG: Show what we found
             // console.log(`Update Check: Local ${currentVersionCode} vs Remote ${data.versionCode}`);
-            alert(`Debug: Local v${currentVersionCode} vs Remote v${data.versionCode}`);
+
 
             // Compare version codes
             // data.versionCode comes from version.json (which comes from build.gradle)

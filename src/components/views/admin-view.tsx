@@ -75,27 +75,16 @@ import { useLanguage } from '@/context/language-context';
 import { t, getProductName } from '@/lib/translations';
 import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
-import ProductImageGallery from './product-image-gallery';
+
 import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
 import CouponManager from '@/components/admin/coupon-manager';
 import DashboardTab from '@/components/admin/dashboard-tab';
-import InventoryTab from '@/components/admin/inventory-tab';
+import ProductsTab from '@/components/admin/products-tab';
 import { OrderFiltersBar, OrderFilters } from '@/components/admin/order-filters-bar';
 import { filterOrders, getUniqueAreas } from '@/lib/order-utils';
 
 
-const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
-  name: '',
-  category: '',
-  pricePerUnit: 0,
-  unit: '',
-  isActive: true,
-  imageUrl: '',
-  imageHint: '',
-  displayOrder: 0,
-  isCutVegetable: false,
-  cutCharge: 0,
-}
+
 
 const initialUserState = {
   name: '',
@@ -286,19 +275,15 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   }, [orders, orderFilters, users]);
 
 
-  const [isProductDialogOpen, setProductDialogOpen] = useState(false);
-  const [isUserDialogOpen, setUserDialogOpen] = useState(false);
-  const [isEditUserDialogOpen, setEditUserDialogOpen] = useState(false);
-  const [isOrderDetailOpen, setOrderDetailOpen] = useState(false);
-  const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isBulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [isSeedDialogOpen, setSeedDialogOpen] = useState(false);
   const [isClearProductsDialogOpen, setClearProductsDialogOpen] = useState(false);
   const [isCouponDialogOpen, setCouponDialogOpen] = useState(false);
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
+  const [isUserDialogOpen, setUserDialogOpen] = useState(false);
+  const [isEditUserDialogOpen, setEditUserDialogOpen] = useState(false);
+  const [isOrderDetailOpen, setOrderDetailOpen] = useState(false);
 
-  const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
-  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCoupon, setEditingCoupon] = useState<Partial<Coupon> | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -307,7 +292,6 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const [whatsappMessage, setWhatsappMessage] = useState('');
   const whatsappCacheRef = useRef<Product[] | null>(null);
   const [whatsappCacheVersion, setWhatsappCacheVersion] = useState(0);
-  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [loading, setLoading] = useState(false);
 
@@ -387,132 +371,11 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   }, [selectedOrder, products, extraProducts, firestore]);
 
 
-  const handleEditProduct = (product: Product) => {
-    setEditingProduct(product);
-    setProductDialogOpen(true);
-  }
 
-  const handleAddNewProduct = () => {
-    setEditingProduct(initialProductState);
-    setProductDialogOpen(true);
-  }
 
-  const handleDeleteClick = (product: Product) => {
-    setDeletingProduct(product);
-    setDeleteDialogOpen(true);
-  };
 
-  const handleConfirmDelete = async () => {
-    if (!firestore || !deletingProduct) return;
-    try {
-      await deleteDoc(doc(firestore, 'products', deletingProduct.id));
-      invalidateWhatsappCache();
-      toast({
-        title: 'Product Deleted',
-        description: `${deletingProduct.name} has been removed.`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error Deleting Product',
-        description: error.message,
-      });
-    } finally {
-      setDeleteDialogOpen(false);
-      setDeletingProduct(null);
-    }
-  };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!storage) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Storage not configured.' });
-      return;
-    }
 
-    try {
-      setUploadingImage(true);
-      const timestamp = Date.now();
-      const storageRef = ref(storage, `products/${timestamp}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-
-      setEditingProduct(prev => prev ? { ...prev, imageUrl: url } : null);
-      toast({ title: "Image Uploaded", description: "Image URL updated successfully." });
-    } catch (err: any) {
-      console.error(err);
-      toast({ variant: "destructive", title: "Upload Failed", description: err.message });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  const handleProductFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firestore || !editingProduct) return;
-
-    setLoading(true);
-
-    const formData = new FormData(e.currentTarget as HTMLFormElement);
-
-    // Construct product data from form
-    const productData = {
-      name: formData.get('name') as string,
-      category: formData.get('category') as string,
-      pricePerUnit: parseFloat(formData.get('pricePerUnit') as string) || 0,
-      unit: formData.get('unit') as string,
-      imageUrl: formData.get('imageUrl') as string,
-      isActive: formData.get('isActive') === 'on',
-      isCutVegetable: formData.get('isCutVegetable') === 'on',
-      cutCharge: parseFloat(formData.get('cutCharge') as string) || 0,
-    };
-
-    try {
-      // Find a matching product in the seed data to get the pre-translated Telugu name
-      const seedMatch = seedProducts.find(p => p.name.toLowerCase() === productData.name.toLowerCase());
-      const translatedName = seedMatch?.name_te || '';
-
-      const finalProductData = {
-        ...productData,
-        name_te: translatedName,
-      };
-
-      if ('id' in editingProduct && editingProduct.id) {
-        // Editing an existing product
-        const productRef = doc(firestore, 'products', editingProduct.id);
-        await setDoc(productRef, finalProductData, { merge: true });
-        toast({
-          title: "Product Updated",
-          description: `${productData.name} has been successfully updated.`,
-        });
-      } else {
-        // Adding a new product
-        const productsCollection = collection(firestore, 'products');
-        const docRef = await addDoc(productsCollection, {
-          ...finalProductData,
-          createdAt: serverTimestamp(),
-        });
-        // Set the ID in the document itself for consistency
-        await setDoc(docRef, { id: docRef.id }, { merge: true });
-        toast({
-          title: "Product Added",
-          description: `${productData.name} has been added to the catalog.`,
-        });
-      }
-      invalidateWhatsappCache();
-      setProductDialogOpen(false); // Close the dialog on success
-
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error Saving Product",
-        description: error.message || "An unexpected error occurred.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAddNewUser = () => {
     setNewUser(initialUserState);
@@ -910,23 +773,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
-  const removeImage = (urlToRemove: string) => {
-    setEditingProduct(prev => {
-      if (!prev) return null;
-      // Safety check for existing images
-      const currentImages = 'images' in prev && Array.isArray(prev.images)
-        ? prev.images
-        : (prev.imageUrl ? [prev.imageUrl] : []);
 
-      const updatedImages = currentImages.filter((url) => url !== urlToRemove);
-
-      return {
-        ...prev,
-        imageUrl: updatedImages.length > 0 ? updatedImages[0] : '',
-        images: updatedImages
-      };
-    });
-  };
 
   const handleExportClick = async () => {
     if (!firestore || !users) {
@@ -1117,7 +964,10 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </TabsContent>
 
         <TabsContent value="inventory">
-          <InventoryTab products={products || []} loading={productsLoading} onProductUpdate={forceRefetch} />
+          {/* Inventory Tab merged into Products */}
+          <div className="p-4 text-center text-muted-foreground">
+            Inventory management is now combined with the <Button variant="link" onClick={() => setActiveTab('products')} className="px-1 text-primary">Products</Button> tab.
+          </div>
         </TabsContent>
 
         <TabsContent value="products">
@@ -1131,101 +981,13 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             <Button variant="outline" onClick={() => setBulkUploadOpen(true)}>
               <Upload className="mr-2 h-4 w-4" /> Bulk Upload
             </Button>
-            <Button onClick={handleAddNewProduct}><PlusCircle className="mr-2 h-4 w-4" /> {t('addNewProduct', language)}</Button>
           </div>
-          {productsError && (
-            <Alert variant="destructive">
-              <Terminal className="h-4 w-4" />
-              <AlertTitle>Error Loading Products</AlertTitle>
-              <AlertDescription>{typeof productsError === 'string' ? productsError : productsError?.message || 'Failed to load products'}</AlertDescription>
-            </Alert>
-          )}
-          {productsLoading ? (<p>Loading products...</p>) : (
-            <>
-              <div className="md:hidden space-y-4">
-                {(products || []).map((product) => {
-                  const imageUrl = isValidUrl(product.imageUrl) ? product.imageUrl : `https://picsum.photos/seed/${product.id}/60/45`;
-                  return (
-                    <Card key={product.id}>
-                      <CardContent className="flex gap-4 p-4">
-                        <Image src={imageUrl} alt={product.name} width={60} height={45} className="rounded-md object-cover aspect-[4/3]" data-ai-hint={product.imageHint || ''} />
-                        <div className="flex-1">
-                          <p className="font-semibold">{getProductName(product, language)}</p>
-                          <p className="text-sm text-muted-foreground">{product.category}</p>
-                          <p className="text-sm">{product.pricePerUnit} / {product.unit}</p>
-                        </div>
-                        <div className="flex flex-col items-center gap-2">
-                          <Badge variant={product.isActive ? 'default' : 'destructive'}>{product.isActive ? 'Active' : 'Inactive'}</Badge>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="icon" onClick={() => handleEditProduct(product)}><FilePen className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteClick(product)}><Trash2 className="h-4 w-4" /></Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-              <Table className="hidden md:table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Image</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(products || []).map((product) => {
-                    const imageUrl = isValidUrl(product.imageUrl) ? product.imageUrl : `https://picsum.photos/seed/${product.id}/40/30`;
-                    return (
-                      <TableRow key={product.id}>
-                        <TableCell>
-                          <Image src={imageUrl} alt={product.name} width={40} height={30} className="rounded-md object-cover" data-ai-hint={product.imageHint || ''} />
-                        </TableCell>
-                        <TableCell>{getProductName(product, language)}</TableCell>
-                        <TableCell>{product.category}</TableCell>
-                        <TableCell>{product.pricePerUnit} / {product.unit}</TableCell>
-                        <TableCell><Badge variant={product.isActive ? 'default' : 'destructive'}>{product.isActive ? 'Active' : 'Inactive'}</Badge></TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" onClick={() => handleEditProduct(product)}><FilePen className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDeleteClick(product)}><Trash2 className="h-4 w-4" /></Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
 
-              <div className="flex items-center justify-end space-x-2 py-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrevPage}
-                  disabled={pageIndex === 0 || productsLoading}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  {t('previous', language) || 'Previous'}
-                </Button>
-                <div className="text-sm font-medium">
-                  Page {pageIndex + 1}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleNextPage}
-                  disabled={!products || products.length < PRODUCTS_PER_PAGE || productsLoading}
-                >
-                  {t('next', language) || 'Next'}
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </div>
-            </>
-          )}
+          <ProductsTab
+            products={products || []}
+            loading={productsLoading}
+            onProductUpdate={forceRefetch}
+          />
         </TabsContent>
 
         <TabsContent value="orders">
@@ -1571,99 +1333,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isProductDialogOpen} onOpenChange={setProductDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">{'id' in (editingProduct || {}) ? 'Edit Product' : 'Add New Product'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleProductFormSubmit}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" name="name" defaultValue={editingProduct && 'name' in editingProduct ? editingProduct.name : ''} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
-                <Select name="category" defaultValue={editingProduct && 'category' in editingProduct ? editingProduct.category : ''}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {['Vegetables', 'Fruits', 'Dairy', 'Subscription'].map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="pricePerUnit">Price</Label>
-                  <Input id="pricePerUnit" name="pricePerUnit" type="number" step="0.01" defaultValue={editingProduct && 'pricePerUnit' in editingProduct ? editingProduct.pricePerUnit : 0} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unit">Unit</Label>
-                  <Input id="unit" name="unit" defaultValue={editingProduct && 'unit' in editingProduct ? editingProduct.unit : ''} placeholder="e.g., kg, packet" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="imageUrl">Image URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="imageUrl"
-                    name="imageUrl"
-                    placeholder="https://..."
-                    defaultValue={editingProduct?.imageUrl || ''}
-                    value={editingProduct?.imageUrl || ''}
-                    onChange={(e) => setEditingProduct(prev => prev ? { ...prev, imageUrl: e.target.value } : null)}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  💡 Paste image URL here (e.g., from ImgBB, Imgur, or direct links)
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <Label htmlFor="imageUpload" className="cursor-pointer flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-md hover:opacity-80 transition-opacity">
-                    <Upload className="h-4 w-4" />
-                    {uploadingImage ? 'Uploading...' : 'Upload Image'}
-                  </Label>
-                  <Input
-                    id="imageUpload"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageUpload}
-                    disabled={uploadingImage}
-                  />
-                  {uploadingImage && <span className="text-xs text-muted-foreground animate-pulse">Uploading...</span>}
-                </div>
 
-                {/* Image Gallery */}
-                {editingProduct && (
-                  <ProductImageGallery
-                    images={'images' in editingProduct && Array.isArray(editingProduct.images)
-                      ? editingProduct.images
-                      : (editingProduct.imageUrl ? [editingProduct.imageUrl] : [])}
-                    onRemove={removeImage}
-                  />
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="isActive" name="isActive" defaultChecked={editingProduct ? ('isActive' in editingProduct ? editingProduct.isActive : true) : true} />
-                <Label htmlFor="isActive">Product is active</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="isCutVegetable" name="isCutVegetable" defaultChecked={editingProduct ? ('isCutVegetable' in editingProduct ? editingProduct.isCutVegetable : false) : false} />
-                <Label htmlFor="isCutVegetable">Cutting service available</Label>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cutCharge">Cut Charge</Label>
-                <Input id="cutCharge" name="cutCharge" type="number" step="0.01" defaultValue={editingProduct && 'cutCharge' in editingProduct ? editingProduct.cutCharge : 0} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save changes"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={isUserDialogOpen} onOpenChange={setUserDialogOpen}>
         <DialogContent>
@@ -1868,21 +1538,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the product
-              <span className="font-semibold"> {deletingProduct?.name}</span>.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+
 
       <Dialog open={isBulkUploadOpen} onOpenChange={setBulkUploadOpen}>
         <DialogContent>

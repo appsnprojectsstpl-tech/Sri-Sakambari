@@ -81,6 +81,11 @@ export default function PaymentMethods({ user }: PaymentMethodsProps) {
             return;
         }
 
+        if (!firestore) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Database unavailable' });
+            return;
+        }
+
         setLoading(true);
         try {
             await addDoc(collection(firestore, `users/${user.id}/paymentMethods`), {

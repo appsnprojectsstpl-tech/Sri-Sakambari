@@ -16,9 +16,9 @@ export function useUserNotifications() {
 
     const sortedNotifications = notifications
         ? [...notifications].sort((a, b) => {
-            const dateA = a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000) : new Date(a.createdAt);
-            const dateB = b.createdAt?.seconds ? new Date(b.createdAt.seconds * 1000) : new Date(b.createdAt);
-            return dateB.getTime() - dateA.getTime();
+            const timeA = (a.createdAt as any)?.seconds ? (a.createdAt as any).seconds * 1000 : new Date(a.createdAt).getTime();
+            const timeB = (b.createdAt as any)?.seconds ? (b.createdAt as any).seconds * 1000 : new Date(b.createdAt).getTime();
+            return timeB - timeA;
         })
         : [];
 

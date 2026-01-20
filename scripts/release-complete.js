@@ -91,7 +91,7 @@ function runRelease(bumpType, releaseNotes, forceUpdate) {
 
         // Step 6: Deploy to Firebase Hosting
         console.log('🔥 Step 6/6: Deploying to Firebase Hosting...');
-        execSync('npx firebase deploy', { stdio: 'inherit' });
+        execSync('npx firebase deploy --only hosting', { stdio: 'inherit' });
         console.log('✅ Deployed to Firebase\n');
 
     } catch (error) {

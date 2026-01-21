@@ -8,7 +8,7 @@ export function Logo(props: HTMLAttributes<HTMLDivElement>) {
     <div {...props} className={`relative ${props.className || 'h-10 w-10'}`}>
       <Image
         src="https://image2url.com/images/1765782592895-e331e0be-b91b-499e-abc2-ad62b01b50c3.png"
-        alt="Sri Sakambari Devi"
+        alt="Sri Sakambari"
         fill
         className="object-cover rounded-full"
       />

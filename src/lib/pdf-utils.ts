@@ -11,7 +11,7 @@ export function generateSalesOrderPDF(order: Order, products: Product[], languag
   // Header
   doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
-  doc.text('Sri Sakambari Devi Vegetable Market', doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
+  doc.text('Sri Sakambari Vegetable Market', doc.internal.pageSize.getWidth() / 2, 20, { align: 'center' });
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');

@@ -22,7 +22,7 @@ interface UpdateInfo {
     forceUpdate: boolean;
 }
 
-export function UpdateChecker() {
+export function UpdateChecker({ headless = false }: { headless?: boolean }) {
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [downloading, setDownloading] = useState(false);
@@ -68,7 +68,7 @@ export function UpdateChecker() {
                 setUpdateAvailable(true);
             } else {
                 console.log('App is up to date.');
-                if (manual) alert(`App is up to date (v${currentVersionCode})`);
+                if (manual) alert(`App is up to date (${currentVersion})`);
                 setUpdateAvailable(false); // Ensure dialog closes if open
             }
         } catch (error) {
@@ -113,6 +113,85 @@ export function UpdateChecker() {
     // Logic for Card UI
     // If we have updateInfo but updateAvailable is false (meaning up-to-date), we show that.
     // If updateAvailable is true, the Dialog will appear.
+
+    if (headless) {
+        return (
+            <>
+                {updateInfo && (
+                    <Dialog
+                        open={updateAvailable}
+                        onOpenChange={(open) => {
+                            if (!open && !updateInfo.forceUpdate) {
+                                setUpdateAvailable(false);
+                            }
+                        }}
+                    >
+                        <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                                <div className="flex items-center gap-2">
+                                    <Sparkles className="h-6 w-6 text-primary" />
+                                    <DialogTitle className="text-xl">Update Available!</DialogTitle>
+                                </div>
+                                <DialogDescription>
+                                    Version {updateInfo.latestVersion} is now available.
+                                    {updateInfo.forceUpdate && (
+                                        <span className="block mt-2 text-destructive font-semibold">
+                                            This update is required to continue.
+                                        </span>
+                                    )}
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-3 py-4">
+                                <div>
+                                    <p className="text-sm font-semibold mb-2">What's New:</p>
+                                    <div className="bg-muted p-3 rounded-md">
+                                        <p className="text-sm whitespace-pre-line">
+                                            {updateInfo.releaseNotes}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>Current: v{currentVersion}</span>
+                                    <span>New: v{updateInfo.latestVersion}</span>
+                                </div>
+                            </div>
+
+                            <DialogFooter className="flex-col sm:flex-row gap-2">
+                                {!updateInfo.forceUpdate && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleLater}
+                                        className="w-full sm:w-auto"
+                                    >
+                                        Later
+                                    </Button>
+                                )}
+                                <Button
+                                    onClick={handleUpdate}
+                                    disabled={downloading}
+                                    className="w-full sm:w-auto"
+                                >
+                                    {downloading ? (
+                                        <>
+                                            <Download className="mr-2 h-4 w-4 animate-bounce" />
+                                            Downloading...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="mr-2 h-4 w-4" />
+                                            Update Now
+                                        </>
+                                    )}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                )}
+            </>
+        );
+    }
 
     return (
         <>

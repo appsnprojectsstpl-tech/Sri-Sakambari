@@ -154,6 +154,7 @@ export const products: Product[] = rawProducts.map((p, index) => {
         isActive: true,
         isCutVegetable: false,
         cutCharge: 10,
+        stockQuantity: 0,
         createdAt: new Date(), // This will be replaced by serverTimestamp() during seeding
     };
 });

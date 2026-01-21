@@ -82,6 +82,7 @@ import DashboardTab from '@/components/admin/dashboard-tab';
 import ProductsTab from '@/components/admin/products-tab';
 import { OrderFiltersBar, OrderFilters } from '@/components/admin/order-filters-bar';
 import { filterOrders, getUniqueAreas } from '@/lib/order-utils';
+import * as XLSX from 'xlsx';
 
 
 
@@ -130,7 +131,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   });
 
   // Pagination State
-  const PRODUCTS_PER_PAGE = 10;
+  const PRODUCTS_PER_PAGE = 50;
   const [pageIndex, setPageIndex] = useState(0);
   const [cursors, setCursors] = useState<any[][]>([]);
 
@@ -320,7 +321,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             .join('\n');
 
           const appUrl = window.location.origin;
-          const message = `*Today's Fresh Stock - Shankari Devi Market*\n\n${productList}\n\n*Place your order now:*\n1. *Click here:* ${appUrl}\n2. *Or, reply to this message with your list!* (e.g., "Sweet Corn x 1, Milk x 2")`;
+          const message = `*Today's Fresh Stock - Sri Sakambari Market*\\n\\n${productList}\\n\\n*Place your order now:*\\n1. *Click here:* ${appUrl}\\n2. *Or, reply to this message with your list!* (e.g., "Sweet Corn x 1, Milk x 2")`;
 
           setWhatsappMessage(message);
         } catch (error) {
@@ -577,6 +578,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     }
   };
 
+
+
   const handleBulkUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !firestore) return;
@@ -585,57 +588,65 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     const reader = new FileReader();
 
     reader.onload = async (e) => {
-      const text = e.target?.result;
-      if (typeof text !== 'string') {
-        toast({ variant: 'destructive', title: 'Error reading file' });
-        setLoading(false);
-        return;
-      }
-
-      const lines = text.split('\n').filter(line => line.trim() !== '');
-      const headers = lines.shift()?.trim().toLowerCase().split(',') || [];
-
-      let successCount = 0;
-      let errorCount = 0;
-      let skippedCount = 0;
-      const totalProducts = lines.length;
-
       try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
+
+        if (!jsonData || jsonData.length === 0) {
+          toast({ variant: 'destructive', title: 'Error', description: 'File appears to be empty or invalid.' });
+          setLoading(false);
+          return;
+        }
+
+        let successCount = 0;
+        let skippedCount = 0;
+
         const BATCH_SIZE = 450;
         let batch = writeBatch(firestore);
         let operationCount = 0;
 
-        for (let i = 0; i < totalProducts; i++) {
-          const line = lines[i];
-          const values = line.trim().split(',');
-          const productData: any = {};
-          headers.forEach((header, index) => {
-            const key = header.trim();
-            const value = values[index]?.trim();
-            if (['priceperunit', 'displayorder', 'cutcharge'].includes(key)) {
-              productData[key] = parseFloat(value || '0');
-            } else if (['isactive', 'iscutvegetable'].includes(key)) {
-              productData[key] = value?.toLowerCase() === 'true';
-            } else {
-              productData[key] = value;
-            }
+        for (const item of jsonData) {
+          // Normalize keys to lowercase for easier matching
+          const normalizedItem: any = {};
+          Object.keys(item).forEach(key => {
+            normalizedItem[key.toLowerCase().trim().replace(/\s+/g, '')] = item[key];
           });
 
-          if (!productData.name || productData.name === '') {
+          const name = normalizedItem['name'] || normalizedItem['productname'];
+          if (!name) {
             skippedCount++;
             continue;
           }
 
-          // Match with seed data to find telugu name
-          const seedMatch = seedProducts.find(p => p.name.toLowerCase() === productData.name.toLowerCase());
+          const productData: any = {
+            name: name,
+            category: normalizedItem['category'] || 'Vegetables', // Default if missing
+            unit: normalizedItem['unit'] || 'kg',
+            pricePerUnit: parseFloat(normalizedItem['priceperunit'] || normalizedItem['price'] || '0'),
+            stockQuantity: parseFloat(normalizedItem['stockquantity'] || normalizedItem['stock'] || '0'),
+            isActive: normalizedItem['isactive'] === true || normalizedItem['isactive'] === 'TRUE' || normalizedItem['isactive'] === 'true',
+            isCutVegetable: normalizedItem['iscutvegetable'] === true || normalizedItem['iscutvegetable'] === 'TRUE' || normalizedItem['iscutvegetable'] === 'true',
+            cutCharge: parseFloat(normalizedItem['cutcharge'] || '0'),
+            displayOrder: parseInt(normalizedItem['displayorder'] || '100'),
+            trackInventory: normalizedItem['trackinventory'] !== false && normalizedItem['trackinventory'] !== 'FALSE' // Default true
+          };
+
+          // Match with seed data for Telugu names if available
+          const seedMatch = seedProducts.find(p => p.name.toLowerCase() === name.toLowerCase());
 
           const newProductDoc = doc(collection(firestore, 'products'));
           batch.set(newProductDoc, {
             ...productData,
             id: newProductDoc.id,
-            name_te: seedMatch ? seedMatch.name_te : '', // Use pre-translated name
+            name_te: normalizedItem['namete'] || (seedMatch ? seedMatch.name_te : ''),
+            imageUrl: normalizedItem['imageurl'] || '',
             createdAt: serverTimestamp(),
+            lastRestocked: serverTimestamp()
           });
+
           successCount++;
           operationCount++;
 
@@ -653,22 +664,26 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         invalidateWhatsappCache();
         toast({
           title: 'Bulk Upload Complete',
-          description: `${successCount} products added. ${errorCount} failed. ${skippedCount} skipped.`,
+          description: `${successCount} products added. ${skippedCount} items skipped (missing name).`,
         });
+
       } catch (error: any) {
+        console.error("Bulk upload error:", error);
         toast({
           variant: 'destructive',
-          title: 'Bulk Upload Failed',
-          description: error.message,
+          title: 'Bulk Upload Error',
+          description: 'Failed to process file. Ensure it is a valid Excel or CSV file.',
         });
       } finally {
         setLoading(false);
         setBulkUploadOpen(false);
-        forceRefetch(); // Force a refetch of the products list
+        forceRefetch();
+        // Reset file input
+        event.target.value = '';
       }
     };
 
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handleSeedDatabase = async () => {

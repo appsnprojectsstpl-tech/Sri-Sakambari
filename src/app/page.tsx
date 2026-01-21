@@ -27,7 +27,7 @@ export default function InitialPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background p-4 gap-4">
-      <p className="text-lg font-semibold animate-pulse">Loading Sri Sakambari Devi Market...</p>
+      <p className="text-lg font-semibold animate-pulse">Loading Sri Sakambari Market...</p>
 
       {showManual && (
         <Button

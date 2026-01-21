@@ -83,7 +83,7 @@ export default function Header({ user, onLogout, cartCount, notifications, onCar
             <Logo className="h-10 w-10 text-primary" />
             <div className='flex flex-col'>
               <h1 className="text-lg font-bold leading-tight tracking-tight text-foreground sm:text-2xl">
-                Sri Sakambari Devi
+                Sri Sakambari
               </h1>
             </div>
           </Link>

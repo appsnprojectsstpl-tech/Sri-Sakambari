@@ -13,14 +13,13 @@ import ProductCard from "@/components/product-card";
 import { cn } from "@/lib/utils";
 import type { Product, CartItem } from "@/lib/types";
 import { useCollection } from '@/firebase';
+import { useToast } from "@/hooks/use-toast";
 
 const CATEGORIES = [
+  { id: 'All', label: 'All', icon: '🧺', color: 'bg-gray-100 text-gray-700' },
   { id: 'Vegetables', label: 'Vegetables', icon: '🥦', color: 'bg-green-100 text-green-700' },
   { id: 'Fruits', label: 'Fruits', icon: '🍎', color: 'bg-red-100 text-red-700' },
-  { id: 'Leafy', label: 'Leafy', icon: '🥬', color: 'bg-green-50 text-green-600' },
-  { id: 'Flowers', label: 'Flowers', icon: '🌸', color: 'bg-pink-100 text-pink-700' },
   { id: 'Dairy', label: 'Dairy', icon: '🥛', color: 'bg-blue-100 text-blue-700' },
-  { id: 'Pooja', label: 'Pooja', icon: '🕉️', color: 'bg-orange-100 text-orange-700' },
 ];
 
 interface CustomerViewProps {
@@ -105,14 +104,19 @@ export default function CustomerView({
 }: CustomerViewProps) {
   const { language } = useLanguage();
   const { isOpen: isStoreOpen, loading: storeStatusLoading } = useStoreStatus(); // NEW
-  const [activeCategory, setActiveCategory] = useState('Vegetables');
+  const [activeCategory, setActiveCategory] = useState('All'); // Default to All
   const [searchQuery, setSearchQuery] = useState('');
   const [isFilterOpen, setFilterOpen] = useState(false);
+  const { toast } = useToast();
 
   // Wrap addToCart to respect store status - memoized to prevent re-renders
   const handleAddToCart = useCallback((product: Product, quantity: number, isCut: boolean) => {
     if (!isStoreOpen && !storeStatusLoading) {
-      alert("Sorry! Store is currently closed for orders.");
+      toast({
+        variant: "destructive",
+        title: "Store Closed",
+        description: "Sorry! Store is currently closed for orders."
+      });
       return;
     }
     addToCart(product, quantity, isCut);
@@ -121,7 +125,12 @@ export default function CustomerView({
   // Wrap updateCart to respect store status - memoized to prevent re-renders
   const handleUpdateCart = useCallback((productId: string, isCut: boolean, newQuantity: number) => {
     if (!isStoreOpen && !storeStatusLoading) {
-      return; // Silently fail or show toast
+      toast({
+        variant: "destructive",
+        title: "Store Closed",
+        description: "Sorry! Store is currently closed for orders."
+      });
+      return;
     }
     updateCartQuantity(productId, isCut, newQuantity);
   }, [isStoreOpen, storeStatusLoading, updateCartQuantity]);
@@ -141,7 +150,7 @@ export default function CustomerView({
         (p.name_te && p.name_te.toLowerCase().includes(q))
       );
     } else {
-      if (activeCategory) {
+      if (activeCategory && activeCategory !== 'All') {
         items = items.filter((p: Product) => p.category === activeCategory);
       }
     }

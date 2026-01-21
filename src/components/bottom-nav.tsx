@@ -9,8 +9,8 @@ import { useFlyToCart } from '@/components/fly-to-cart-context';
 export function BottomNav() {
     const pathname = usePathname();
 
-    // Hide on landing page if needed
-    if (pathname === '/home') return null;
+    // Hide on landing page or cart page (cart has its own footer)
+    if (pathname === '/home' || pathname === '/cart') return null;
 
     const navItems = [
         { href: '/home', label: 'Home', icon: Home },

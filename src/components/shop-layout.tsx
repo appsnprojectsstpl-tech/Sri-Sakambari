@@ -13,7 +13,7 @@ import { BottomNav } from './bottom-nav';
 import { Toaster } from './ui/toaster';
 import { logger, safeLocalStorage } from '@/lib/logger';
 import Header from '@/components/header';
-import CartSheet from '@/components/cart-sheet';
+// import CartSheet from '@/components/cart-sheet'; // Removed for page navigation
 import ProductCard from '@/components/product-card';
 import ProductCardSkeleton from '@/components/product-card-skeleton';
 import SearchBar from '@/components/search-bar';
@@ -45,7 +45,7 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
     const { language } = useLanguage();
 
     const [cart, setCart] = useState<CartItem[]>([]);
-    const [isCartOpen, setCartOpen] = useState(false);
+    // const [isCartOpen, setCartOpen] = useState(false); // Removed for page navigation
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id || 'all');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -122,9 +122,20 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
 
     const cartTotal = useMemo(() => {
         return cart.reduce((total, item) => {
-            const price = Number(item.product.pricePerUnit) || 0;
-            const quantity = Number(item.quantity) || 0;
-            const cutCharge = item.isCut ? (Number(item.product.cutCharge) || 10) : 0;
+            const rawPrice = Number(item.product.pricePerUnit);
+            const price = isNaN(rawPrice) ? 0 : rawPrice;
+
+            const rawQty = Number(item.quantity);
+            const quantity = isNaN(rawQty) ? 0 : rawQty;
+
+            let cutCharge = 0;
+            if (item.isCut) {
+                const rawCut = Number(item.product.cutCharge);
+                // If cutCharge is explicitly defined (even 0), use it. If undefined/NaN, use default 10.
+                // However, we must be careful. If the DB has '0', Number('0') is 0. isNaN(0) is false.
+                // If DB is missing it, Number(undefined) is NaN.
+                cutCharge = isNaN(rawCut) ? 10 : rawCut;
+            }
 
             const itemTotal = price * quantity;
             const cutChargeTotal = cutCharge * quantity;
@@ -172,7 +183,7 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
 
     return (
         <div className="flex flex-col min-h-screen bg-gray-50 text-foreground pb-20 overflow-hidden sm:pb-0">
-            <Header user={user || null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
+            <Header user={user || null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => router.push('/cart')} />
 
             {/* Sticky Header Group: Search + Horizontal Tabs */}
             <div className="sticky top-[64px] z-30 bg-white/95 backdrop-blur shadow-sm border-b">
@@ -292,14 +303,7 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                 onUpdateQuantity={updateCartQuantity}
             />
 
-            <CartSheet
-                isOpen={isCartOpen}
-                onOpenChange={setCartOpen}
-                cart={cart}
-                cartTotal={cartTotal}
-                updateCartQuantity={updateCartQuantity}
-                clearCart={clearCart}
-            />
+            {/* CartSheet Removed - Using Dedicated /cart Page */}
 
             {/* Floating Scroll to Top Button */}
             {showScrollTop && (

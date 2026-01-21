@@ -4,70 +4,60 @@ service cloud.firestore {
     
     // Helper function to check if user is admin
     function isAdmin() {
-      return request.auth != null && exists(/databases/$(database)/documents/roles_admin/$(request.auth.uid));
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
-    // Helper function to check if user is authenticated
+    // Helper to check if user is authenticated
     function isAuth() {
       return request.auth != null;
     }
 
-    // Helper function to check if user is owning the document
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    // Users: Users can read/write their own profile. Admins can read all.
-    match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow write: if isOwner(userId) || isAdmin();
-    }
-
-    // Products: Public Read. Admin Write.
+    // Products: Public Read, Admin Write (Auth users can update for stock)
     match /products/{productId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAuth(); // Needed for client-side stock deduction
     }
-
-    // Orders: Users can create/read their own. Admins can read/write all.
-    match /orders/{orderId} {
-      allow read: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
-      allow create: if isAuth() && request.resource.data.customerId == request.auth.uid;
-      allow update: if isAdmin(); // Only admins update status
-      allow delete: if isAdmin();
-    }
-
-    // Notifications: Users read their own. Admins write.
-    match /notifications/{notificationId} {
-      allow read: if isAuth() && resource.data.userId == request.auth.uid;
-      allow write: if isAdmin() || (isAuth() && request.resource.data.userId == request.auth.uid); // Allow users to "mark read" (update)
-    }
-
-    // Order Counters: Public Read (needed for ID generation), Admin Write (or transactional increment)
-    // Ideally this should be server-side, but typically client-side increment needs write access.
-    // We restrict write to authenticated users who are creating an order.
-    match /orderCounters/{counterId} {
-      allow read: if isAuth();
-      allow write: if isAuth(); 
-    }
-
-    // Admin Roles: Admin Read Only (to verify own status). No one writes (done via Console or Seed script).
-    match /roles_admin/{userId} {
-      allow read: if isAuth();
-      allow write: if false; 
-    }
-
-    // Delivery Partners: Public Read (for checking slot availability? or just Admin?) 
-    // Assuming just admin for now for management.
-    match /delivery_partners/{partnerId} {
-      allow read: if isAdmin();
+    
+    // Categories: Public Read, Admin Write
+    match /categories/{categoryId} {
+      allow read: if true;
       allow write: if isAdmin();
     }
     
-    // Areas: Public Read. Admin Write.
+    // Users: Own Data Access
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Orders: Create/Read Own
+    match /orders/{orderId} {
+      allow read: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow create: if isAuth();
+      allow update: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
+    }
+    
+    // Notifications: Admin Read, System Write (users can write for now to simulate system)
+    match /notifications/{notificationId} {
+      allow read: if isAuth() && (resource.data.userId == request.auth.uid);
+      allow write: if isAuth(); 
+    }
+
+    // Counters: Public Read, Auth Write (for order IDs)
+    match /orderCounters/{counterId} {
+      allow read: if true;
+      allow write: if isAuth();
+    }
+    
+    // Areas: Public Read, Admin Write
     match /areas/{areaId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+    
+    // Catch-all: Deny (Default)
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

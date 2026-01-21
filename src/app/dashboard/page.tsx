@@ -11,7 +11,7 @@ const DeliveryView = lazy(() => import('@/components/views/delivery-view'));
 import LoginView from '@/components/views/login-view';
 import { useUser, useAuth, useCollection } from '@/firebase';
 import { signOut } from 'firebase/auth';
-import CartSheet from '@/components/cart-sheet';
+// import CartSheet from '@/components/cart-sheet'; // Removed
 import { useRouter } from 'next/navigation';
 import { logger, safeLocalStorage } from '@/lib/logger';
 import { settings } from '@/lib/settings';
@@ -32,8 +32,10 @@ export default function DashboardPage() {
   const auth = useAuth();
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [isCartOpen, setCartOpen] = useState(false);
+  // const [isCartOpen, setCartOpen] = useState(false); // Removed
 
+
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     // Restore cart from localStorage on initial load
@@ -44,20 +46,22 @@ export default function DashboardPage() {
       }
     } catch (e) {
       logger.error("Failed to parse cart from localStorage", e);
-      // Reset to empty cart on error
       setCart([]);
+    } finally {
+      setIsInitialized(true);
     }
   }, []);
 
   // Effect to persist cart to localStorage whenever it changes
   useEffect(() => {
+    if (!isInitialized) return; // Don't write before loading
+
     if (cart.length > 0) {
       localStorage.setItem('cart', JSON.stringify(cart));
     } else {
-      // Clear localStorage if cart is empty to avoid persisting an empty array string
       localStorage.removeItem('cart');
     }
-  }, [cart]);
+  }, [cart, isInitialized]);
 
 
   // Effect to handle pre-selected products from the landing page
@@ -156,7 +160,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-foreground">
-      <Header user={user ?? null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => setCartOpen(true)} />
+      <Header user={user ?? null} onLogout={handleLogout} cartCount={cartItemCount} notifications={notifications || []} onCartClick={() => router.push('/cart')} />
       <main className="flex-1">
         <ErrorBoundary>
           <Suspense fallback={
@@ -171,14 +175,7 @@ export default function DashboardPage() {
           </Suspense>
         </ErrorBoundary>
       </main>
-      <CartSheet
-        isOpen={isCartOpen}
-        onOpenChange={setCartOpen}
-        cart={cart}
-        cartTotal={cartTotal}
-        updateCartQuantity={updateCartQuantity}
-        clearCart={clearCart}
-      />
+      {/* CartSheet Removed - Using Dedicated /cart Page */}
     </div>
   );
 }

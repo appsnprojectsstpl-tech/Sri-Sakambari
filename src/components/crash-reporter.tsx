@@ -12,12 +12,17 @@ export default function CrashReporter() {
             alert(`PROMISE FAIL: ${event.reason}`);
         };
 
-        // Capture console.error
-        const originalError = console.error;
-        console.error = (...args) => {
-            alert(`CONSOLE HEADER: ${args.map(a => String(a)).join(' ')}`);
-            originalError.apply(console, args);
-        };
+        // Capture console.error - OPTIONAL: Disable this if it's too noisy
+        // const originalError = console.error;
+        // console.error = (...args) => {
+        //    // Check if the first argument is an Event
+        //    const msg = args.map(a => {
+        //        if (a instanceof Event) return `[Event: ${a.type} on ${a.target}]`;
+        //        if (a instanceof Error) return `[Error: ${a.message}]`;
+        //        return String(a);
+        //    }).join(' ');
+        //    // originalError.apply(console, args);
+        // };
 
         window.addEventListener('error', handleError);
         window.addEventListener('unhandledrejection', handleRejection);

@@ -169,7 +169,7 @@ export default function ManualOrderDialog({ isOpen, onOpenChange, products, area
                 // 2c. Verify Stock
                 productSnapshots.forEach((snap, index) => {
                     if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
-                    const currentStock = snap.data().stock || 0;
+                    const currentStock = snap.data().stockQuantity || 0;
                     if (currentStock < productReads[index].qty) {
                         throw new Error(`Insufficient stock for ${productReads[index].name}. Available: ${currentStock}`);
                     }
@@ -179,8 +179,8 @@ export default function ManualOrderDialog({ isOpen, onOpenChange, products, area
                 transaction.set(counterRef, { lastId: nextId }, { merge: true });
 
                 productSnapshots.forEach((snap, index) => {
-                    const newStock = (snap.data().stock || 0) - productReads[index].qty;
-                    transaction.update(productReads[index].ref, { stock: newStock });
+                    const newStock = (snap.data().stockQuantity || 0) - productReads[index].qty;
+                    transaction.update(productReads[index].ref, { stockQuantity: newStock });
                 });
 
                 const orderData: Order = {

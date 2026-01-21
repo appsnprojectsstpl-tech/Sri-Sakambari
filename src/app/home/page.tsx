@@ -42,14 +42,14 @@ export default function VisitingCardPage() {
           <Link href="/dashboard" className='flex items-center gap-2'>
             <Image
               src="https://image2url.com/images/1765782592895-e331e0be-b91b-499e-abc2-ad62b01b50c3.png"
-              alt="Sri Sakambari Devi Logo"
+              alt="Sri Sakambari Logo"
               width={64}
               height={64}
               className="w-12 h-12 sm:w-16 sm:h-16 rounded-full border-2 border-white shadow-lg"
               priority
             />
             <h1 className="text-xl sm:text-3xl font-bold font-headline leading-tight text-[#FF0000]" style={{ fontFamily: "'Poppins', sans-serif" }}>
-              Sri Sakambari Devi<br />{t('vegetableMarket', language)}
+              Sri Sakambari<br />{t('vegetableMarket', language)}
             </h1>
           </Link>
         </div>
@@ -136,15 +136,16 @@ export default function VisitingCardPage() {
       </main>
 
       {/* Sticky Mobile Footer Action */}
-      <div className="fixed bottom-4 left-4 right-4 z-50 sm:static sm:block sm:w-full sm:max-w-md sm:mx-auto">
+      {/* Sticky Mobile Footer Action - Optimized Size */}
+      <div className="fixed bottom-6 right-6 z-50 sm:static sm:block sm:w-auto sm:mx-auto animate-in slide-in-from-bottom">
         <a
           href={generateWhatsAppLink('Hi, I would like to place an order.')}
           target="_blank"
           rel="noopener noreferrer"
-          className="block w-full bg-green-500 text-white font-bold py-4 px-6 rounded-full text-xl sm:text-2xl shadow-lg transition-transform hover:scale-105 border-2 border-white sm:border-transparent flex items-center justify-center gap-2"
+          className="bg-green-500 text-white font-bold py-3 px-6 rounded-full text-lg shadow-xl hover:scale-105 border-2 border-white flex items-center gap-2 transition-transform"
         >
-          <Phone className="w-6 h-6" />
-          {t('orderOnWhatsApp', language)}
+          <Phone className="w-5 h-5" />
+          <span>{t('orderOnWhatsApp', language)}</span>
         </a>
       </div>
     </div >

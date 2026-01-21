@@ -87,7 +87,7 @@ export default function CartSheet({
     }
   }, [user]);
 
-  const finalTotal = cartTotal;
+  const finalTotal = isNaN(cartTotal) ? 0 : cartTotal;
   const isMinOrderMet = finalTotal >= settings.minOrderValue;
   // Free Delivery Nudge Logic (Gamification)
   // Assuming a target like ₹500 for a "Free Delivery" mental goal, or just reusing minOrder functionality visually.
@@ -167,7 +167,7 @@ export default function CartSheet({
         // 3. Verify Stock
         productSnapshots.forEach((snap, index) => {
           if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
-          const currentStock = snap.data().stock || 0;
+          const currentStock = snap.data().stockQuantity || 0;
           if (currentStock < productReads[index].qty) {
             throw new Error(`Insufficient stock for ${productReads[index].name}. Available: ${currentStock}`);
           }
@@ -178,8 +178,8 @@ export default function CartSheet({
 
         // 5. Update Stocks
         productSnapshots.forEach((snap, index) => {
-          const newStock = (snap.data().stock || 0) - productReads[index].qty;
-          transaction.update(productReads[index].ref, { stock: newStock });
+          const newStock = (snap.data().stockQuantity || 0) - productReads[index].qty;
+          transaction.update(productReads[index].ref, { stockQuantity: newStock });
         });
 
         // 6. Create Order
@@ -397,7 +397,7 @@ export default function CartSheet({
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-11 w-11 rounded-full"
+                          className="h-8 w-8 rounded-full"
                           onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
                         >
                           <Minus className="h-4 w-4" />
@@ -408,12 +408,12 @@ export default function CartSheet({
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-11 w-11 rounded-full"
+                          className="h-8 w-8 rounded-full"
                           onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive h-11 w-11 hover:bg-destructive/10 rounded-full" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10 rounded-full" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -506,7 +506,7 @@ export default function CartSheet({
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-10 w-10 rounded-full"
+                        className="h-8 w-8 rounded-full"
                         onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
                       >
                         <Minus className="h-5 w-5" />
@@ -517,7 +517,7 @@ export default function CartSheet({
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-10 w-10 rounded-full"
+                        className="h-8 w-8 rounded-full"
                         onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
                       >
                         <Plus className="h-5 w-5" />
@@ -525,7 +525,7 @@ export default function CartSheet({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="text-destructive h-10 w-10 hover:bg-destructive/10"
+                        className="text-destructive h-8 w-8 hover:bg-destructive/10"
                         onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}
                       >
                         <Trash2 className="h-5 w-5" />

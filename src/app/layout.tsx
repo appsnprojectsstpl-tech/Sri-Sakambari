@@ -12,6 +12,7 @@ import { BottomNav } from '@/components/bottom-nav';
 import AuthGuard from '@/components/auth-guard';
 import ServiceWorkerRegister from '@/components/service-worker-register';
 import OrderUpdatesListener from '@/components/order-updates-listener';
+import { UpdateChecker } from '@/components/update-checker';
 
 export const metadata: Metadata = {
   title: 'Sri Sakambari',
@@ -33,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover" />
       </head>
       <body
         suppressHydrationWarning
@@ -57,6 +58,7 @@ export default function RootLayout({
                 <AuthGuard>
                   <FlyToCartOverlay />
                   <OrderUpdatesListener />
+                  <UpdateChecker headless />
                   {children}
                 </AuthGuard>
               </FlyToCartProvider>

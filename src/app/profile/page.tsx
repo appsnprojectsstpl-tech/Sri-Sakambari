@@ -123,21 +123,39 @@ export default function ProfilePage() {
 
         const productMap = new Map(fetchedProducts.map(p => [p.id, p]));
         const itemsToProcess: CartItem[] = [];
+        let skippedCount = 0;
 
         order.items.forEach(item => {
             const product = productMap.get(item.productId);
             if (product && product.isActive) {
-                itemsToProcess.push({
-                    product,
-                    quantity: item.qty,
-                    isCut: item.isCut || false
-                });
+                // Check stock
+                const isAvailable = (!product.trackInventory) || ((product.stockQuantity || 0) >= item.qty);
+
+                if (isAvailable) {
+                    itemsToProcess.push({
+                        product,
+                        quantity: item.qty,
+                        isCut: item.isCut || false
+                    });
+                } else {
+                    skippedCount++;
+                }
+            } else {
+                skippedCount++;
             }
         });
 
         if (itemsToProcess.length === 0) {
-            toast({ variant: 'destructive', title: 'Unavailable', description: 'Items are no longer available.' });
+            toast({ variant: 'destructive', title: 'Unavailable', description: 'None of the items are available in stock.' });
             return;
+        }
+
+        if (skippedCount > 0) {
+            toast({
+                variant: 'warning',
+                title: 'Some items unavailable',
+                description: `${skippedCount} items were out of stock or unavailable and were skipped.`
+            });
         }
 
         let currentCart: CartItem[] = [];
@@ -161,6 +179,7 @@ export default function ProfilePage() {
 
         safeLocalStorage.setItem('cart', JSON.stringify(currentCart));
         window.dispatchEvent(new Event("storage"));
+        toast({ title: 'Cart Updated', description: 'Items added to your cart.' }); // Feedback for success
     };
 
     const handleModifyOrder = async (order: Order) => {

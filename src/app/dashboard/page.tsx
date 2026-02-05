@@ -2,7 +2,9 @@
 'use client';
 import type { FC } from 'react';
 import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
-import type { Product, Role, CartItem, User, Notification } from '@/lib/types';
+import type { Product, Role, CartItem, User, Notification, ProductVariant } from '@/lib/types';
+
+
 import Header from '@/components/header';
 import CustomerView from '@/components/views/customer-view';
 // Lazy load admin and delivery views to reduce initial bundle size
@@ -20,6 +22,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 const Views: Record<Role, FC<any>> = {
   customer: CustomerView,
   admin: AdminView,
+  restricted_admin: AdminView,
   delivery: DeliveryView,
   guest: CustomerView, // Guest sees the customer view
 };
@@ -92,31 +95,31 @@ export default function DashboardPage() {
     }
   };
 
-  const addToCart = (product: Product, quantity: number = 1, isCut: boolean = false) => {
+  const addToCart = (product: Product, quantity: number = 1, isCut: boolean = false, variant: ProductVariant | null | undefined = undefined) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find(
-        (item) => item.product.id === product.id && item.isCut === isCut
+        (item) => item.product.id === product.id && item.isCut === isCut && item.selectedVariant?.id === variant?.id
       );
       if (existingItem) {
         return prevCart.map((item) =>
-          item.product.id === product.id && item.isCut === isCut
+          item.product.id === product.id && item.isCut === isCut && item.selectedVariant?.id === variant?.id
             ? { ...item, quantity: item.quantity + quantity }
             : item
         );
       }
-      return [...prevCart, { product, quantity, isCut }];
+      return [...prevCart, { product, quantity, isCut, selectedVariant: variant }];
     });
   };
 
-  const updateCartQuantity = (productId: string, isCut: boolean, quantity: number) => {
+  const updateCartQuantity = (productId: string, isCut: boolean, quantity: number, variantId?: string) => {
     setCart((prevCart) => {
       if (quantity <= 0) {
         return prevCart.filter(
-          (item) => !(item.product.id === productId && item.isCut === isCut)
+          (item) => !(item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId)
         );
       }
       return prevCart.map((item) =>
-        item.product.id === productId && item.isCut === isCut
+        item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId
           ? { ...item, quantity }
           : item
       );
@@ -129,7 +132,8 @@ export default function DashboardPage() {
 
   const cartTotal = useMemo(() => {
     return cart.reduce((total, item) => {
-      const itemTotal = item.product.pricePerUnit * item.quantity;
+      const price = item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit;
+      const itemTotal = price * item.quantity;
       const cutChargeTotal = item.isCut ? ((item.product.cutCharge || settings.defaultCutCharge) * item.quantity) : 0;
       return total + itemTotal + cutChargeTotal;
     }, 0);
@@ -155,6 +159,7 @@ export default function DashboardPage() {
     customer: { addToCart, updateCartQuantity, cart },
     guest: { addToCart, updateCartQuantity, cart },
     admin: { user },
+    restricted_admin: { user },
     delivery: { user },
   };
 

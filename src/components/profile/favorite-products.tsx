@@ -68,14 +68,10 @@ export default function FavoriteProducts({ orders, onReorder }: FavoriteProducts
                 <div className="grid grid-cols-2 gap-3">
                     {favoriteProducts.map((product) => (
                         <div key={product.id} className="border rounded-lg p-3 space-y-2">
-                            <div className="aspect-square relative bg-gray-50 rounded-md overflow-hidden">
-                                <Image
-                                    src={`https://picsum.photos/seed/${product.id}/200/200`}
-                                    alt={product.name}
-                                    fill
-                                    className="object-cover"
-                                    sizes="150px"
-                                />
+                            <div className="aspect-square relative bg-gray-100 rounded-md overflow-hidden flex items-center justify-center">
+                                <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                    <ShoppingCart className="w-12 h-12" />
+                                </div>
                                 <div className="absolute top-2 right-2 bg-white rounded-full p-1">
                                     <Heart className="h-4 w-4 text-red-500 fill-red-500" />
                                 </div>

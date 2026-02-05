@@ -48,10 +48,52 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
     const addresses = user?.addresses || [];
 
+    const validateAddress = (address: Partial<Address>): { isValid: boolean; errors: string[] } => {
+        const errors: string[] = [];
+        
+        if (!address.label || address.label.trim().length < 2) {
+            errors.push("Address label must be at least 2 characters long");
+        }
+        
+        if (!address.line1 || address.line1.trim().length < 5) {
+            errors.push("Address line 1 must be at least 5 characters long");
+        }
+        
+        if (address.line2 && address.line2.trim().length > 100) {
+            errors.push("Address line 2 must not exceed 100 characters");
+        }
+        
+        if (!address.area || address.area.trim().length < 2) {
+            errors.push("Area must be at least 2 characters long");
+        }
+        
+        if (address.pincode) {
+            const pincodeRegex = /^\d{6}$/;
+            if (!pincodeRegex.test(address.pincode)) {
+                errors.push("Pincode must be a valid 6-digit number");
+            }
+        }
+        
+        if (address.landmark && address.landmark.trim().length > 100) {
+            errors.push("Landmark must not exceed 100 characters");
+        }
+        
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    };
+
     const handleAddAddress = async () => {
         if (!user || !firestore) return;
-        if (!newAddress.line1 || !newAddress.area || !newAddress.label) {
-            toast({ title: "Missing fields", description: "Please fill all required fields", variant: "destructive" });
+        
+        const validation = validateAddress(newAddress);
+        if (!validation.isValid) {
+            toast({ 
+                title: "Validation Error", 
+                description: validation.errors.join(". "), 
+                variant: "destructive" 
+            });
             return;
         }
 
@@ -95,9 +137,39 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
     const handleDelete = async (id: string) => {
         if (!user || !firestore) return;
+        
+        const addressToDelete = addresses.find(a => a.id === id);
+        if (!addressToDelete) return;
+        
+        const confirmed = window.confirm(`Are you sure you want to delete the address "${addressToDelete.label}"? This action cannot be undone.`);
+        if (!confirmed) return;
+        
         haptics.impact(ImpactStyle.Medium);
-        const updatedAddresses = addresses.filter(a => a.id !== id);
-        await updateDoc(doc(firestore, "users", user.id), { addresses: updatedAddresses });
+        
+        try {
+            const updatedAddresses = addresses.filter(a => a.id !== id);
+            await updateDoc(doc(firestore, "users", user.id), { addresses: updatedAddresses });
+            toast({ title: "Address Deleted", description: `"${addressToDelete.label}" has been deleted successfully` });
+        } catch (error) {
+            console.error('Error deleting address:', error);
+            
+            let errorMessage = 'Failed to delete address';
+            if (error instanceof Error) {
+                if (error.message.includes('permission-denied')) {
+                    errorMessage = 'You do not have permission to delete this address';
+                } else if (error.message.includes('not-found')) {
+                    errorMessage = 'Address not found';
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+            
+            toast({ 
+                title: "Error", 
+                description: errorMessage, 
+                variant: "destructive" 
+            });
+        }
     };
 
     const handleSetDefault = async (id: string) => {
@@ -108,12 +180,34 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
         const updatedAddresses = addresses.map(a => ({ ...a, isDefault: a.id === id }));
 
-        await updateDoc(doc(firestore, "users", user.id), {
-            addresses: updatedAddresses,
-            address: `${target.line1}, ${target.area}`,
-            area: target.area,
-            pincode: target.pincode,
-        });
+        try {
+            await updateDoc(doc(firestore, "users", user.id), {
+                addresses: updatedAddresses,
+                address: `${target.line1}, ${target.area}`,
+                area: target.area,
+                pincode: target.pincode,
+            });
+            toast({ title: "Default Address Set", description: `"${target.label}" is now your default address` });
+        } catch (error) {
+            console.error('Error setting default address:', error);
+            
+            let errorMessage = 'Failed to set default address';
+            if (error instanceof Error) {
+                if (error.message.includes('permission-denied')) {
+                    errorMessage = 'You do not have permission to update this address';
+                } else if (error.message.includes('not-found')) {
+                    errorMessage = 'User not found';
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+            
+            toast({ 
+                title: "Error", 
+                description: errorMessage, 
+                variant: "destructive" 
+            });
+        }
     };
 
     return (

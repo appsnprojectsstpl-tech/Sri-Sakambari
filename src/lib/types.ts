@@ -2,7 +2,18 @@
 import { z } from 'genkit';
 import type { Timestamp } from 'firebase/firestore';
 
-export type Role = 'customer' | 'admin' | 'delivery' | 'guest';
+export type Role = 'customer' | 'admin' | 'restricted_admin' | 'delivery' | 'guest';
+
+export interface AdminPermissions {
+  canAccessDashboard: boolean;
+  canAccessInventory: boolean;
+  canAccessProducts: boolean;
+  canAccessOrders: boolean;
+  canAccessSubscriptions: boolean;
+  canAccessUsers: boolean;
+  canAccessCoupons: boolean;
+  canAccessWhatsApp: boolean;
+}
 
 export interface Address {
   id: string;
@@ -32,14 +43,22 @@ export interface User {
   notifications?: NotificationPreferences;
 }
 
+export interface ProductVariant {
+  id: string;
+  unit: string;
+  price: number;
+  stock: number;
+  image?: string; // New: Specific image for this variant
+}
+
 export interface Product {
   id: string;
   name: string;
   name_te?: string; // Telugu name
   category: string;
   subCategory?: string; // For fruits grouping
-  pricePerUnit: number;
-  unit: string;
+  pricePerUnit: number; // Base price
+  unit: string; // Base unit
   isActive: boolean;
   imageUrl: string; // Primary image for backward compatibility
   images?: string[]; // New: Multiple images support
@@ -47,15 +66,16 @@ export interface Product {
   displayOrder: number;
   createdAt: Date;
   isCutVegetable?: boolean;
-  cutCharge?: number;
-  description?: string;
-  originalPrice?: number;
-  isNew?: boolean;
-  // Inventory Management
-  stockQuantity?: number;
-  lowStockThreshold?: number;
-  trackInventory?: boolean;
-  lastRestocked?: Date;
+  cutCharge: number;
+  stockQuantity: number;
+  lastRestocked?: Date | Timestamp;
+  trackInventory: boolean;
+  variants?: ProductVariant[]; // New: Support for multiple weight/price variants
+  costPrice?: number; // Internal Cost
+  originalPrice?: number; // MRP (for strike-through)
+  seoTitle?: string;
+  seoDescription?: string;
+  keywords?: string[];
 }
 
 export interface Area {
@@ -75,6 +95,9 @@ export interface OrderItem {
   name?: string;
   name_te?: string;
   unit?: string;
+  variantId?: string; // New: Selected variant ID
+  variantUnit?: string; // New: Selected variant unit
+  selectedVariant?: ProductVariant | null; // For UI display if full object is saved
 }
 
 export interface Order {
@@ -97,6 +120,8 @@ export interface Order {
   deliveryPhotoUrl?: string;
   agreedToTerms?: boolean;
   subscriptionId?: string;
+  pincode?: string;
+  landmark?: string;
 }
 
 export interface Subscription {
@@ -127,6 +152,7 @@ export interface CartItem {
   product: Product;
   quantity: number;
   isCut: boolean;
+  selectedVariant?: ProductVariant | null; // New: Selected variant
 }
 
 export interface Notification {

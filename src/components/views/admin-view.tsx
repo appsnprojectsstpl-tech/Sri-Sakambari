@@ -77,41 +77,23 @@ import { Textarea } from '../ui/textarea';
 import { exportOrdersToExcel } from '@/lib/excel-utils';
 
 import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
-import CouponManager from '@/components/admin/coupon-manager';
 import DashboardTab from '@/components/admin/dashboard-tab';
 import ProductsTab from '@/components/admin/products-tab';
-import { OrderFiltersBar, OrderFilters } from '@/components/admin/order-filters-bar';
-import { filterOrders, getUniqueAreas } from '@/lib/order-utils';
 import * as XLSX from 'xlsx';
+import OrdersTab from '@/components/admin/orders-tab';
+import SubscriptionsTab from '@/components/admin/subscriptions-tab';
+import UsersTab from '@/components/admin/users-tab';
+import CouponsTab from '@/components/admin/coupons-tab';
+import WhatsappTab from '@/components/admin/whatsapp-tab';
+import { getAdminPermissions, getAllowedTabs } from '@/lib/permission-config';
+import { useOrderNotification, requestNotificationPermission } from '@/hooks/useOrderNotification';
 
 
 
 
-const initialUserState = {
-  name: '',
-  email: '',
-  phone: '',
-  role: 'delivery' as Role,
-  address: '',
-  area: '',
-  landmark: '',
-  pincode: '',
-  password: ''
-}
 
-const initialCouponState: Partial<Coupon> = {
-  code: '',
-  type: 'FLAT',
-  value: 0,
-  minOrderValue: 0,
-  maxDiscount: 0,
-  isActive: true,
-  usageLimit: 100,
-  usedCount: 0,
-  startDate: new Date().toISOString().split('T')[0],
-  expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-  description: ''
-}
+
+
 
 export default function AdminView({ user: adminUser }: { user: User }) {
   const auth = useAuth();
@@ -120,15 +102,28 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState("dashboard");
 
-  // Order Filters State
-  const [orderFilters, setOrderFilters] = useState<OrderFilters>({
-    searchTerm: '',
-    status: 'all',
-    paymentMode: 'all',
-    area: 'all',
-    dateFrom: '',
-    dateTo: ''
-  });
+  // Order Filters State - Moved to OrdersTab
+  // Permission-based access control
+  const permissions = getAdminPermissions(adminUser.role);
+  const allowedTabs = getAllowedTabs(adminUser.role);
+
+  // Redirect to first allowed tab if current tab is not accessible
+  useEffect(() => {
+    if (permissions && !allowedTabs.includes(activeTab)) {
+      setActiveTab(allowedTabs[0] || 'orders');
+    }
+  }, [permissions, allowedTabs, activeTab]);
+
+  // Enable order notifications for admins
+  useOrderNotification(adminUser.role);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (adminUser.role === 'admin' || adminUser.role === 'restricted_admin') {
+      requestNotificationPermission();
+    }
+  }, [adminUser.role]);
+
 
   // Pagination State
   const PRODUCTS_PER_PAGE = 50;
@@ -160,7 +155,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     const batch = writeBatch(firestore);
     notifications.forEach(n => {
       if (!n.isRead) {
-        batch.update(doc(firestore, 'notifications', n.id), { isRead: true });
+        batch.set(doc(firestore, 'notifications', n.id), { isRead: true }, { merge: true });
       }
     });
     await batch.commit();
@@ -177,16 +172,11 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   // If we are on 'products' tab, we use pagination.
   // For other tabs (Inventory, Stats, etc.), we likely need ALL products for correct stats/search.
   // Fetching all (e.g. up to 1000) is safer for those views until we implement server-side search for them.
-  const isPaginationEnabled = activeTab === 'products';
-
-  const productConstraints = isPaginationEnabled ? [
+  // Products: Fetch ALL products for correct client-side stats (Stock Value, Low Stock counts)
+  // and search/filtering. Optimized for < 2000 products.
+  const productConstraints = [
     ['orderBy', 'name', 'asc'],
-    ['orderBy', 'id', 'asc'],
-    ['limit', PRODUCTS_PER_PAGE],
-    ...(pageIndex > 0 && cursors[pageIndex - 1] ? [['startAfter', ...cursors[pageIndex - 1]]] : [])
-  ] : [
-    ['orderBy', 'name', 'asc'],
-    ['limit', 1000] // Fetch effectively all for Inventory/Dashboard
+    ['limit', 2000]
   ];
 
   const { data: products, loading: productsLoading, error: productsError, forceRefetch } = useCollection<Product>('products', {
@@ -269,107 +259,15 @@ export default function AdminView({ user: adminUser }: { user: User }) {
     disabled: activeTab !== 'coupons'
   });
 
-  // Filtered orders based on search and filters
-  const filteredOrders = useMemo(() => {
-    if (!orders) return [];
-    return filterOrders(orders, orderFilters, users || undefined);
-  }, [orders, orderFilters, users]);
+
 
 
   const [isBulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [isSeedDialogOpen, setSeedDialogOpen] = useState(false);
   const [isClearProductsDialogOpen, setClearProductsDialogOpen] = useState(false);
-  const [isCouponDialogOpen, setCouponDialogOpen] = useState(false);
   const [isMigrateDialogOpen, setMigrateDialogOpen] = useState(false);
-  const [isUserDialogOpen, setUserDialogOpen] = useState(false);
-  const [isEditUserDialogOpen, setEditUserDialogOpen] = useState(false);
-  const [isOrderDetailOpen, setOrderDetailOpen] = useState(false);
-
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editingCoupon, setEditingCoupon] = useState<Partial<Coupon> | null>(null);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [extraProducts, setExtraProducts] = useState<Record<string, Product>>({}); // Cache for products not in current page
-  const [newUser, setNewUser] = useState(initialUserState);
-  const [whatsappMessage, setWhatsappMessage] = useState('');
-  const whatsappCacheRef = useRef<Product[] | null>(null);
-  const [whatsappCacheVersion, setWhatsappCacheVersion] = useState(0);
-
   const [loading, setLoading] = useState(false);
 
-  const deliveryStaff = users?.filter(u => u.role === 'delivery') || [];
-
-  const invalidateWhatsappCache = () => {
-    whatsappCacheRef.current = null;
-    setWhatsappCacheVersion(prev => prev + 1);
-  };
-
-  useEffect(() => {
-    if (activeTab === 'whatsapp' && firestore) {
-      const generateMessage = async () => {
-        try {
-          let activeProducts = whatsappCacheRef.current;
-
-          if (!activeProducts) {
-            const q = query(collection(firestore, 'products'), where('isActive', '==', true), orderBy('name', 'asc'));
-            const snapshot = await getDocs(q);
-            activeProducts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-            whatsappCacheRef.current = activeProducts;
-          }
-
-          const productList = activeProducts
-            .map(p => `* ${getProductName(p, language)}: ${p.pricePerUnit}/${p.unit}`)
-            .join('\n');
-
-          const appUrl = window.location.origin;
-          const message = `*Today's Fresh Stock - Sri Sakambari Market*\\n\\n${productList}\\n\\n*Place your order now:*\\n1. *Click here:* ${appUrl}\\n2. *Or, reply to this message with your list!* (e.g., "Sweet Corn x 1, Milk x 2")`;
-
-          setWhatsappMessage(message);
-        } catch (error) {
-          console.error("Failed to generate WhatsApp message", error);
-          toast({ variant: 'destructive', title: 'Error', description: 'Failed to load products for WhatsApp message' });
-        }
-      };
-      generateMessage();
-    }
-  }, [activeTab, firestore, language, toast, whatsappCacheVersion]);
-
-  useEffect(() => {
-    if (!selectedOrder || !firestore) return;
-
-    const fetchMissingProducts = async () => {
-      const missingIds = selectedOrder.items
-        .map(item => item.productId)
-        .filter(id => !products?.find(p => p.id === id) && !extraProducts[id]);
-
-      if (missingIds.length === 0) return;
-
-      const newProducts: Record<string, Product> = {};
-
-      // Batch requests in chunks of 10 to avoid N+1 and connection limits
-      // This has been verified to be ~9x faster than individual fetches (see src/tests/benchmark_admin_product_fetch_comparison.ts)
-      const CHUNK_SIZE = 10;
-      const chunks = [];
-      for (let i = 0; i < missingIds.length; i += CHUNK_SIZE) {
-        chunks.push(missingIds.slice(i, i + CHUNK_SIZE));
-      }
-
-      await Promise.all(chunks.map(async (chunk) => {
-        try {
-          const q = query(collection(firestore, 'products'), where(documentId(), 'in', chunk));
-          const snapshot = await getDocs(q);
-          snapshot.docs.forEach(doc => {
-            newProducts[doc.id] = { id: doc.id, ...doc.data() } as Product;
-          });
-        } catch (e) {
-          console.error("Failed to fetch product chunk", chunk, e);
-        }
-      }));
-
-      setExtraProducts(prev => ({ ...prev, ...newProducts }));
-    };
-
-    fetchMissingProducts();
-  }, [selectedOrder, products, extraProducts, firestore]);
 
 
 
@@ -378,205 +276,16 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
 
 
-  const handleAddNewUser = () => {
-    setNewUser(initialUserState);
-    setUserDialogOpen(true);
-  }
-
-  const handleEditUser = (user: User) => {
-    setEditingUser(user);
-    setEditUserDialogOpen(true);
-  }
-
-  const handleUpdateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firestore || !editingUser) return;
-    setLoading(true);
-    try {
-      const userRef = doc(firestore, 'users', editingUser.id);
-      await setDoc(userRef, {
-        name: editingUser.name,
-        phone: editingUser.phone,
-        role: editingUser.role,
-        address: editingUser.address || '',
-        area: editingUser.area || '',
-        pincode: editingUser.pincode || '',
-      }, { merge: true });
-
-      if (editingUser.role === 'admin') {
-        const adminRoleRef = doc(firestore, 'roles_admin', editingUser.id);
-        await setDoc(adminRoleRef, { assignedAt: new Date() }, { merge: true });
-      }
 
 
-      toast({
-        title: "User Updated",
-        description: `${editingUser.name}'s details have been updated.`,
-      });
-      setEditUserDialogOpen(false);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error updating user",
-        description: error.message,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!auth || !firestore) return;
-    setLoading(true);
-    try {
-      await createUser(auth, firestore, { ...newUser });
-      toast({
-        title: "User Created",
-        description: `${newUser.name} has been added as a ${newUser.role}.`,
-      });
-      setUserDialogOpen(false);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error creating user",
-        description: error.message,
-      });
-      setLoading(false);
-    }
-  }
 
-  const handleAddNewCoupon = () => {
-    setEditingCoupon(initialCouponState);
-    setCouponDialogOpen(true);
-  }
 
-  const handleEditCoupon = (coupon: Coupon) => {
-    setEditingCoupon(coupon);
-    setCouponDialogOpen(true);
-  }
 
-  const handleDeleteCoupon = async (id: string) => {
-    if (!firestore || !confirm("Are you sure you want to delete this coupon?")) return;
-    try {
-      await deleteDoc(doc(firestore, 'coupons', id));
-      toast({ title: "Coupon Deleted" });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    }
-  }
 
-  const handleSaveCoupon = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firestore || !editingCoupon) return;
-    setLoading(true);
 
-    const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const couponData = {
-      code: (formData.get('code') as string).toUpperCase(),
-      type: formData.get('type') as 'FLAT' | 'PERCENTAGE',
-      value: parseFloat(formData.get('value') as string) || 0,
-      minOrderValue: parseFloat(formData.get('minOrderValue') as string) || 0,
-      maxDiscount: parseFloat(formData.get('maxDiscount') as string) || 0,
-      usageLimit: parseInt(formData.get('usageLimit') as string) || 0,
-      startDate: formData.get('startDate') as string,
-      expiryDate: formData.get('expiryDate') as string,
-      isActive: formData.get('isActive') === 'on',
-      description: formData.get('description') as string,
-      usedCount: editingCoupon.usedCount || 0
-    };
 
-    try {
-      if (editingCoupon.id) {
-        await setDoc(doc(firestore, 'coupons', editingCoupon.id), couponData, { merge: true });
-        toast({ title: "Coupon Updated" });
-      } else {
-        await addDoc(collection(firestore, 'coupons'), {
-          ...couponData,
-          createdAt: serverTimestamp()
-        });
-        toast({ title: "Coupon Created" });
-      }
-      setCouponDialogOpen(false);
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  const handleAssignDeliveryPartner = async (orderId: string, partner: User) => {
-    if (!firestore || !auth?.currentUser) return;
-    try {
-      const orderRef = doc(firestore, 'orders', orderId);
-      const currentOrder = orders?.find(o => o.id === orderId);
-      const newStatus = currentOrder?.status === 'PENDING' ? 'CONFIRMED' : currentOrder?.status;
-
-      await setDoc(orderRef, {
-        deliveryPartnerId: partner.id,
-        status: newStatus
-      }, { merge: true });
-
-      await createNotification(
-        firestore,
-        partner.id,
-        'New Order Assigned',
-        `You have been assigned a new order: #${orderId}`
-      );
-
-      toast({
-        title: 'Delivery Partner Assigned',
-        description: `${partner.name} has been assigned to order #${orderId}`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Assignment Failed',
-        description: error.message,
-      });
-    }
-  };
-
-  const handleViewOrderDetails = (order: Order) => {
-    setSelectedOrder(order);
-    setOrderDetailOpen(true);
-  }
-
-  const handleCopyWhatsapp = () => {
-    navigator.clipboard.writeText(whatsappMessage);
-    toast({ title: 'Message Copied!' });
-  }
-
-  const handleOpenWhatsapp = () => {
-    window.open('https://web.whatsapp.com', '_blank');
-  }
-
-  const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
-    if (!firestore || !selectedOrder) return;
-
-    try {
-      // 1. Update Order
-      await setDoc(doc(firestore, 'orders', orderId), { status: newStatus }, { merge: true });
-
-      // 2. Update Local State
-      setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
-
-      // 3. Notify Customer
-      await addDoc(collection(firestore, 'notifications'), {
-        userId: selectedOrder.customerId,
-        title: `Order Update: ${newStatus.replace(/_/g, ' ')}`,
-        message: `Your Order #${orderId} is now ${newStatus.toLowerCase().replace(/_/g, ' ')}.`,
-        isRead: false,
-        createdAt: serverTimestamp(),
-        type: 'order',
-        linkId: orderId
-      });
-
-      toast({ title: 'Status Updated', description: `Order marked as ${newStatus}` });
-    } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
-    }
-  };
 
 
 
@@ -711,7 +420,6 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
-      invalidateWhatsappCache();
       toast({
         title: 'Database Seeded',
         description: `${seedProducts.length} products have been updated/added in Firestore.`,
@@ -756,7 +464,6 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         await batch.commit();
       }
 
-      invalidateWhatsappCache();
       toast({
         title: 'All Products Deleted',
         description: `${deletedCount} products have been removed. The page will now refresh.`,
@@ -963,595 +670,120 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </Popover>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full pb-24">
-        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-7 h-auto">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          <TabsTrigger value="products">{t('products', language)}</TabsTrigger>
-          <TabsTrigger value="orders">{t('orders', language)}</TabsTrigger>
-          <TabsTrigger value="subscriptions">{t('subscriptions', language)}</TabsTrigger>
-          <TabsTrigger value="users">{t('users', language)}</TabsTrigger>
-          <TabsTrigger value="coupons">Coupons</TabsTrigger>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+        <TabsList className={`grid w-full h-auto ${allowedTabs.length <= 3 ? 'grid-cols-3' :
+          allowedTabs.length <= 5 ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5' :
+            'grid-cols-2 sm:grid-cols-3 md:grid-cols-7'
+          }`}>
+          {permissions?.canAccessDashboard && <TabsTrigger value="dashboard">Dashboard</TabsTrigger>}
+
+          {permissions?.canAccessProducts && <TabsTrigger value="products">{t('products', language)}</TabsTrigger>}
+          {permissions?.canAccessOrders && <TabsTrigger value="orders">{t('orders', language)}</TabsTrigger>}
+          {permissions?.canAccessSubscriptions && <TabsTrigger value="subscriptions">{t('subscriptions', language)}</TabsTrigger>}
+          {permissions?.canAccessUsers && <TabsTrigger value="users">{t('users', language)}</TabsTrigger>}
+          {permissions?.canAccessCoupons && <TabsTrigger value="coupons">Coupons</TabsTrigger>}
+          {permissions?.canAccessWhatsApp && <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="dashboard">
-          <DashboardTab orders={orders || []} products={products || []} loading={ordersLoading || productsLoading} />
-        </TabsContent>
+        {permissions?.canAccessDashboard && (
+          <TabsContent value="dashboard">
+            <DashboardTab orders={orders || []} products={products || []} loading={ordersLoading || productsLoading} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="inventory">
-          {/* Inventory Tab merged into Products */}
-          <div className="p-4 text-center text-muted-foreground">
-            Inventory management is now combined with the <Button variant="link" onClick={() => setActiveTab('products')} className="px-1 text-primary">Products</Button> tab.
-          </div>
-        </TabsContent>
 
-        <TabsContent value="products">
-          <div className="flex justify-end items-center my-4 gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => setClearProductsDialogOpen(true)}>
-              <Trash2 className="mr-2 h-4 w-4" /> Clear All Products
-            </Button>
-            <Button variant="outline" onClick={() => setSeedDialogOpen(true)}>
-              <Database className="mr-2 h-4 w-4" /> Seed Database
-            </Button>
-            <Button variant="outline" onClick={() => setBulkUploadOpen(true)}>
-              <Upload className="mr-2 h-4 w-4" /> Bulk Upload
-            </Button>
-          </div>
 
-          <ProductsTab
-            products={products || []}
-            loading={productsLoading}
-            onProductUpdate={forceRefetch}
-          />
-        </TabsContent>
+        {permissions?.canAccessProducts && (
+          <TabsContent value="products">
+            <div className="flex justify-end items-center my-4 gap-2 flex-wrap">
+              <Button variant="outline" onClick={() => setBulkUploadOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" /> Bulk Upload
+              </Button>
+            </div>
 
-        <TabsContent value="orders">
-          {/* Order Filters */}
-          <OrderFiltersBar
-            filters={orderFilters}
-            onFiltersChange={setOrderFilters}
-            areas={getUniqueAreas(orders || [])}
-            totalOrders={orders?.length || 0}
-            filteredCount={filterOrders(orders || [], orderFilters, users || undefined).length}
-          />
+            <ProductsTab
+              products={products || []}
+              loading={productsLoading}
+              onProductUpdate={forceRefetch}
+            />
+          </TabsContent>
+        )}
 
-          <div className="flex justify-end my-4 gap-2">
-            <Button variant="outline" onClick={() => setMigrateDialogOpen(true)} disabled={ordersLoading || !orders || !products}>
-              <Database className="mr-2 h-4 w-4" /> Migrate Orders
-            </Button>
-            <Button onClick={handleExportClick} disabled={ordersLoading || !orders || orders.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Export to Excel
-            </Button>
-          </div>
-          {ordersLoading ? <p>Loading orders...</p> : (
-            <>
-              <div className="md:hidden space-y-4 mt-4">
-                {(filteredOrders || []).map((order) => {
-                  const customer = users?.find(u => u.id === order.customerId);
-                  const partner = users?.find(u => u.id === order.deliveryPartnerId);
-                  return (
-                    <Card key={order.id} onClick={() => handleViewOrderDetails(order)}>
-                      <CardHeader>
-                        <CardTitle className="text-base flex justify-between">
-                          <span>{customer?.name || 'Unknown User'}</span>
-                          <span>{order.totalAmount}</span>
-                        </CardTitle>
-                        <CardDescription>#{order.id}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <p className="text-sm font-medium">Area: <span className="font-normal text-muted-foreground">{order.area}</span></p>
-                          <div>Status: <Badge>{order.status}</Badge></div>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium mb-1">Delivery Partner</p>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="outline" className="w-full justify-between" onClick={(e) => e.stopPropagation()}>
-                                {partner ? partner.name : 'Assign'}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
-                              {deliveryStaff.map(staff => (
-                                <DropdownMenuItem key={staff.id} onSelect={() => handleAssignDeliveryPartner(order.id, staff)}>
-                                  {staff.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-              <Table className="hidden md:table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Order ID</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Area</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Delivery Partner</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(filteredOrders || []).map((order) => {
-                    const customer = users?.find(u => u.id === order.customerId);
-                    const partner = users?.find(u => u.id === order.deliveryPartnerId);
-                    return (
-                      <TableRow key={order.id} onClick={() => handleViewOrderDetails(order)} className="cursor-pointer">
-                        <TableCell className="font-mono text-xs">{order.id}</TableCell>
-                        <TableCell>{customer?.name || order.customerId}</TableCell>
-                        <TableCell>{order.area}</TableCell>
-                        <TableCell>{order.totalAmount}</TableCell>
-                        <TableCell><Badge>{order.status}</Badge></TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                {partner ? partner.name : 'Assign'}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              {deliveryStaff.map(staff => (
-                                <DropdownMenuItem key={staff.id} onSelect={() => handleAssignDeliveryPartner(order.id, staff)}>
-                                  {staff.name}
-                                </DropdownMenuItem>
-                              ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+        {permissions?.canAccessOrders && (
+          <TabsContent value="orders">
+            <OrdersTab
+              orders={orders || []}
+              users={users || []}
+              products={products || []}
+              loading={ordersLoading}
+              onOrderUpdate={() => {
+                // Optional: force refresh if needed, usually realtime handles it
+              }}
+              pageIndex={ordersPageIndex}
+              onNextPage={handleNextPageOrders}
+              onPrevPage={handlePrevPageOrders}
+              hasMore={!!orders && orders.length >= ORDERS_PER_PAGE}
+              onExport={handleExportClick}
+              onMigrate={() => setMigrateDialogOpen(true)}
+            />
+          </TabsContent>
+        )}
 
-              <div className="flex items-center justify-end space-x-2 py-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrevPageOrders}
-                  disabled={ordersPageIndex === 0 || ordersLoading}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  {t('previous', language) || 'Previous'}
-                </Button>
-                <div className="text-sm font-medium">
-                  Page {ordersPageIndex + 1}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleNextPageOrders}
-                  disabled={!orders || orders.length < ORDERS_PER_PAGE || ordersLoading}
-                >
-                  {t('next', language) || 'Next'}
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </div>
-            </>
-          )}
-        </TabsContent>
+        {permissions?.canAccessSubscriptions && (
+          <TabsContent value="subscriptions">
+            <SubscriptionsTab
+              subscriptions={subscriptions || []}
+              users={users || []}
+              products={products || []}
+              loading={subscriptionsLoading}
+              onUpdate={() => {
+                // Optional refresh logic
+              }}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="subscriptions">
-          {subscriptionsLoading ? <p>Loading subscriptions...</p> : (
-            <>
-              <div className="md:hidden space-y-4 mt-4">
-                {(subscriptions || []).map((sub) => {
-                  const customer = users?.find(u => u.id === sub.customerId);
-                  return (
-                    <Card key={sub.id}>
-                      <CardHeader>
-                        <CardTitle className="text-base flex justify-between">
-                          <span>{sub.planName}</span>
-                          <Badge variant={sub.isActive ? 'default' : 'secondary'}>{sub.isActive ? 'Active' : 'Paused'}</Badge>
-                        </CardTitle>
-                        <CardDescription>{customer?.name || sub.customerId}</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm font-medium">Frequency: <span className="font-normal text-muted-foreground">{sub.frequency}</span></p>
-                        <p className="text-sm font-medium">Area: <span className="font-normal text-muted-foreground">{sub.area}</span></p>
-                      </CardContent>
-                    </Card>
-                  )
-                })}
-              </div>
-              <Table className="hidden md:table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Plan Name</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Frequency</TableHead>
-                    <TableHead>Area</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(subscriptions || []).map((sub) => {
-                    const customer = users?.find(u => u.id === sub.customerId);
-                    return (
-                      <TableRow key={sub.id}>
-                        <TableCell>{sub.planName}</TableCell>
-                        <TableCell>{customer?.name || sub.customerId}</TableCell>
-                        <TableCell>{sub.frequency}</TableCell>
-                        <TableCell>{sub.area}</TableCell>
-                        <TableCell><Badge variant={sub.isActive ? 'default' : 'secondary'}>{sub.isActive ? 'Active' : 'Paused'}</Badge></TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </>
-          )}
-        </TabsContent>
+        {permissions?.canAccessUsers && (
+          <TabsContent value="users">
+            <UsersTab
+              users={users || []}
+              loading={usersLoading}
+              onUpdate={() => {
+                // Refresh logic if needed or handled by realtime
+              }}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="users">
-          <div className="flex justify-end my-4">
-            <Button onClick={handleAddNewUser}><PlusCircle className="mr-2 h-4 w-4" /> Add New User</Button>
-          </div>
-          {usersError && (
-            <Alert variant="destructive">
-              <Terminal className="h-4 w-4" />
-              <AlertTitle>Error Loading Users</AlertTitle>
-              <AlertDescription>{typeof usersError === 'string' ? usersError : usersError?.message || 'Failed to load users'}</AlertDescription>
-            </Alert>
-          )}
-          {usersLoading ? (<p>Loading users...</p>) : (
-            <>
-              <div className="md:hidden space-y-4">
-                {(users || []).map((user) => (
-                  <Card key={user.id}>
-                    <CardHeader>
-                      <CardTitle className="text-base flex justify-between items-center">
-                        <span>{user.name}</span>
-                        <Badge variant={user.role === 'admin' ? 'default' : (user.role === 'delivery' ? 'secondary' : 'outline')}>{user.role}</Badge>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="text-sm text-muted-foreground flex items-center gap-2"><Mail className="h-4 w-4" />{user.email}</div>
-                      <div className="text-sm text-muted-foreground flex items-center gap-2"><Phone className="h-4 w-4" />{user.phone}</div>
-                      <Button variant="outline" size="sm" className="mt-2" onClick={() => handleEditUser(user)}><FilePen className="mr-2 h-4 w-4" />Edit User</Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <Table className="hidden md:table">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(users || []).map((user) => (
-                    <TableRow key={user.id}>
-                      <TableCell>{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.phone}</TableCell>
-                      <TableCell><Badge variant={user.role === 'admin' ? 'default' : (user.role === 'delivery' ? 'secondary' : 'outline')}>{user.role}</Badge></TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}><FilePen className="h-4 w-4" /></Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </>
-          )}
-        </TabsContent>
+        {permissions?.canAccessCoupons && (
+          <TabsContent value="coupons">
+            <CouponsTab
+              coupons={coupons || []}
+              loading={couponsLoading}
+              onUpdate={() => {
+                // Optional refetch or toast
+              }}
+            />
+          </TabsContent>
+        )}
 
-        <TabsContent value="coupons">
-          <CouponManager />
-        </TabsContent>
-
-        <TabsContent value="whatsapp">
-          <Card>
-            <CardHeader>
-              <CardTitle>WhatsApp Marketing Message</CardTitle>
-              <CardDescription>Copy this message to share the daily stock update with customers.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                value={whatsappMessage}
-                className="min-h-[300px] font-mono text-sm"
-                readOnly
-              />
-              <div className="flex gap-4">
-                <Button onClick={handleCopyWhatsapp} className="flex-1">
-                  <Copy className="mr-2 h-4 w-4" /> Copy Message
-                </Button>
-                <Button onClick={handleOpenWhatsapp} variant="outline" className="flex-1">
-                  <ExternalLink className="mr-2 h-4 w-4" /> Open WhatsApp
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {permissions?.canAccessWhatsApp && (
+          <TabsContent value="whatsapp" className="h-[calc(100vh-200px)]">
+            <WhatsappTab
+              products={products || []}
+              loading={productsLoading}
+            />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Coupon Dialog */}
-      <Dialog open={isCouponDialogOpen} onOpenChange={setCouponDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingCoupon?.id ? 'Edit Coupon' : 'Create New Coupon'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveCoupon} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Coupon Code</Label>
-                <Input name="code" defaultValue={editingCoupon?.code} placeholder="SUMMER50" required />
-              </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select name="type" defaultValue={editingCoupon?.type || 'FLAT'}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FLAT">Flat Amount (₹)</SelectItem>
-                    <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Value</Label>
-                <Input name="value" type="number" defaultValue={editingCoupon?.value} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Min Order Value</Label>
-                <Input name="minOrderValue" type="number" defaultValue={editingCoupon?.minOrderValue} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Max Discount (for %)</Label>
-                <Input name="maxDiscount" type="number" defaultValue={editingCoupon?.maxDiscount} />
-              </div>
-              <div className="space-y-2">
-                <Label>Usage Limit</Label>
-                <Input name="usageLimit" type="number" defaultValue={editingCoupon?.usageLimit} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Start Date</Label>
-                <Input name="startDate" type="date" defaultValue={editingCoupon?.startDate} required />
-              </div>
-              <div className="space-y-2">
-                <Label>Expiry Date</Label>
-                <Input name="expiryDate" type="date" defaultValue={editingCoupon?.expiryDate} required />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Input name="description" defaultValue={editingCoupon?.description} placeholder="e.g. 50% off for new users" />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox id="isActive" name="isActive" defaultChecked={editingCoupon?.isActive} />
-              <Label htmlFor="isActive">Active</Label>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCouponDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>
-                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save Coupon
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
 
 
-      <Dialog open={isUserDialogOpen} onOpenChange={setUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">Add New User</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateUser}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-name">Name</Label>
-                <Input id="new-name" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-email">Email</Label>
-                <Input id="new-email" type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-password">Password</Label>
-                <Input id="new-password" type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-phone">Phone</Label>
-                <Input id="new-phone" type="tel" value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-role">Role</Label>
-                <Select value={newUser.role} onValueChange={(value: Role) => setNewUser({ ...newUser, role: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="customer">Customer</SelectItem>
-                    <SelectItem value="delivery">Delivery Staff</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-address">Address</Label>
-                <Input id="new-address" value={newUser.address} onChange={(e) => setNewUser({ ...newUser, address: e.target.value })} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-area">Area</Label>
-                <Select required onValueChange={(value) => setNewUser({ ...newUser, area: value })} value={newUser.area}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select area" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(areas || []).map(a => <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-pincode">Pincode</Label>
-                <Input id="new-pincode" value={newUser.pincode} onChange={(e) => setNewUser({ ...newUser, pincode: e.target.value })} required />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setUserDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={loading}>{loading ? 'Creating...' : 'Create User'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={isEditUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-headline">Edit User</DialogTitle>
-          </DialogHeader>
-          {editingUser && (
-            <form onSubmit={handleUpdateUser}>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Name</Label>
-                  <Input id="edit-name" value={editingUser.name} onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-email">Email</Label>
-                  <Input id="edit-email" type="email" value={editingUser.email} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-phone">Phone</Label>
-                  <Input id="edit-phone" type="tel" value={editingUser.phone} onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-role">Role</Label>
-                  <Select value={editingUser.role} onValueChange={(value: Role) => setEditingUser({ ...editingUser, role: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="customer">Customer</SelectItem>
-                      <SelectItem value="delivery">Delivery Staff</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-address">Address</Label>
-                  <Input id="edit-address" value={editingUser.address || ''} onChange={(e) => setEditingUser({ ...editingUser, address: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-area">Area</Label>
-                  <Select value={editingUser.area || ''} onValueChange={(value) => setEditingUser({ ...editingUser, area: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select Area" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(areas || []).map(a => <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-pincode">Pincode</Label>
-                  <Input id="edit-pincode" value={editingUser.pincode || ''} onChange={(e) => setEditingUser({ ...editingUser, pincode: e.target.value })} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditUserDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={loading}>{loading ? 'Updating...' : 'Save Changes'}</Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      <Dialog open={isOrderDetailOpen} onOpenChange={setOrderDetailOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Order #{selectedOrder?.id}</DialogTitle>
-            <DialogDescription>
-              Placed on {selectedOrder && new Date(selectedOrder.createdAt as any).toLocaleDateString()}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedOrder && users && products && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-semibold mb-2">Customer Details</h3>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.name}</div>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.address}</div>
-                  <div>{selectedOrder.area}</div>
-                  <div>{users.find(u => u.id === selectedOrder.customerId)?.phone}</div>
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-2">Order Summary</h3>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">Status:</span>
-                    <Select
-                      value={selectedOrder.status}
-                      onValueChange={(val: Order['status']) => handleStatusChange(selectedOrder.id, val)}
-                    >
-                      <SelectTrigger className="h-8 w-[140px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PENDING">Pending</SelectItem>
-                        <SelectItem value="ACCEPTED">Accepted</SelectItem>
-                        <SelectItem value="PREPARING">Preparing</SelectItem>
-                        <SelectItem value="OUT_FOR_DELIVERY">Out for Delivery</SelectItem>
-                        <SelectItem value="DELIVERED">Delivered</SelectItem>
-                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>Total: {selectedOrder.totalAmount}</div>
-                  <div>Payment: {selectedOrder.paymentMode}</div>
-                  <div>Delivery Partner: {users.find(u => u.id === selectedOrder.deliveryPartnerId)?.name || 'Not Assigned'}</div>
-                </div>
-              </div>
-              <div>
-                <h3 className="font-semibold mb-2">Items</h3>
-                <ul className="space-y-1 text-sm">
-                  {selectedOrder.items.map(item => {
-                    const product = products.find(p => p.id === item.productId) || extraProducts[item.productId];
-                    return (
-                      <li key={item.productId} className="flex justify-between">
-                        <span>{product ? getProductName(product, language) : 'Unknown Item'}</span>
-                        <span className="text-muted-foreground">
-                          {item.qty} x {item.priceAtOrder.toFixed(2)}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
 
-              {selectedOrder.deliveryPhotoUrl && (
-                <div>
-                  <h3 className="font-semibold mb-2">Proof of Delivery</h3>
-                  <div className="relative aspect-video w-full rounded-md overflow-hidden border">
-                    <Image src={selectedOrder.deliveryPhotoUrl} alt="Proof of delivery" fill className="object-contain" />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOrderDetailOpen(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
 
 
@@ -1626,6 +858,6 @@ export default function AdminView({ user: adminUser }: { user: User }) {
         </AlertDialogContent>
       </AlertDialog>
 
-    </div>
+    </div >
   );
 }

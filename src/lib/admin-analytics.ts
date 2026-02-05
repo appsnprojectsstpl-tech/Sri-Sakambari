@@ -14,66 +14,132 @@ export interface DashboardStats {
     categoryRevenue: { category: string; revenue: number }[];
 }
 
+export type TimeRange = 'today' | 'week' | 'month';
+
+export interface DashboardStats {
+    totalRevenue: number;
+    previousRevenue: number;
+    totalOrders: number;
+    previousOrders: number;
+    activeCustomers: number;
+    avgOrderValue: number;
+    ordersByStatus: Record<string, number>;
+    revenueChartData: { name: string; value: number }[];
+    topProducts: { productId: string; name: string; quantity: number; revenue: number }[];
+    categoryRevenue: { category: string; revenue: number }[];
+}
+
 export function calculateDashboardStats(
     orders: Order[],
-    products: Product[]
+    products: Product[],
+    range: TimeRange
 ): DashboardStats {
     const now = new Date();
     const productMap = new Map(products.map(p => [p.id, p]));
 
-    // Filter orders
-    const todayOrders = orders.filter(o => {
-        const orderDate = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
-        return isToday(orderDate);
+    let startDate: Date;
+    let previousStartDate: Date;
+    let previousEndDate: Date;
+
+    // Define Ranges
+    switch (range) {
+        case 'week':
+            startDate = subDays(startOfDay(now), 7);
+            previousStartDate = subDays(startOfDay(now), 14);
+            previousEndDate = subDays(endOfDay(now), 7);
+            break;
+        case 'month':
+            startDate = subDays(startOfDay(now), 30);
+            previousStartDate = subDays(startOfDay(now), 60);
+            previousEndDate = subDays(endOfDay(now), 30);
+            break;
+        case 'today':
+        default:
+            startDate = startOfDay(now);
+            previousStartDate = startOfDay(subDays(now, 1));
+            previousEndDate = endOfDay(subDays(now, 1));
+            break;
+    }
+
+    // Filter Orders
+    const currentOrders = orders.filter(o => {
+        const date = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
+        return date >= startDate;
     });
 
-    const yesterdayOrders = orders.filter(o => {
-        const orderDate = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
-        return isYesterday(orderDate);
+    const previousOrders = orders.filter(o => {
+        const date = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
+        return date >= previousStartDate && date <= previousEndDate;
     });
 
-    // Revenue calculations
-    const todayRevenue = todayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const yesterdayRevenue = yesterdayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    // 1. Revenue
+    const totalRevenue = currentOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const previousRevenue = previousOrders.reduce((sum, o) => sum + o.totalAmount, 0);
 
-    // Order counts
-    const totalOrders = todayOrders.length;
-    const yesterdayOrdersCount = yesterdayOrders.length;
+    // 2. Orders
+    const totalOrdersCount = currentOrders.length;
+    const previousOrdersCount = previousOrders.length;
 
-    // Active customers (unique customers in last 30 days)
+    // 3. Active Customers (always last 30 days regardless of view)
     const thirtyDaysAgo = subDays(now, 30);
     const recentOrders = orders.filter(o => {
-        const orderDate = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
-        return orderDate >= thirtyDaysAgo;
+        const date = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
+        return date >= thirtyDaysAgo;
     });
     const activeCustomers = new Set(recentOrders.map(o => o.customerId)).size;
 
-    // Average order value
-    const avgOrderValue = totalOrders > 0 ? todayRevenue / totalOrders : 0;
+    // 4. Avg Order Value
+    const avgOrderValue = totalOrdersCount > 0 ? totalRevenue / totalOrdersCount : 0;
 
-    // Orders by status
-    const ordersByStatus = todayOrders.reduce((acc, order) => {
+    // 5. Orders by Status
+    const ordersByStatus = currentOrders.reduce((acc, order) => {
         acc[order.status] = (acc[order.status] || 0) + 1;
         return acc;
     }, {} as Record<string, number>);
 
-    // Revenue by day (last 7 days)
-    const revenueByDay = Array.from({ length: 7 }, (_, i) => {
-        const date = subDays(now, 6 - i);
-        const dayOrders = orders.filter(o => {
-            const orderDate = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
-            return orderDate >= startOfDay(date) && orderDate <= endOfDay(date);
-        });
-        return {
-            date: format(date, 'MMM dd'),
-            revenue: dayOrders.reduce((sum, o) => sum + o.totalAmount, 0)
-        };
-    });
+    // 6. Revenue Chart Data
+    // For 'today', show hourly? No, simple daily breakdown is robust enough for now.
+    // Let's stick to Daily breakdown for Week/Month, and maybe just single bar for Today or 4-hour chunks?
+    // To keep it simple: generic "Revenue Trend" over the selected period.
+    const revenueChartData: { name: string; value: number }[] = [];
 
-    // Top products
+    if (range === 'today') {
+        // Hourly buckets
+        const hours = Array.from({ length: 24 }, (_, i) => i);
+        revenueChartData.push(...hours.map(h => ({ name: `${h}:00`, value: 0 })));
+
+        currentOrders.forEach(o => {
+            const date = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
+            const hour = date.getHours();
+            revenueChartData[hour].value += o.totalAmount;
+        });
+    } else {
+        // Daily buckets
+        const days = range === 'week' ? 7 : 30;
+        const bucketMap = new Map<string, number>();
+
+        // Initialize last N days with 0
+        for (let i = 0; i < days; i++) {
+            const d = subDays(now, i);
+            bucketMap.set(format(d, 'MMM dd'), 0);
+        }
+
+        currentOrders.forEach(o => {
+            const date = o.createdAt instanceof Date ? o.createdAt : new Date((o.createdAt as any).seconds * 1000);
+            const key = format(date, 'MMM dd');
+            if (bucketMap.has(key)) {
+                bucketMap.set(key, (bucketMap.get(key) || 0) + o.totalAmount);
+            }
+        });
+
+        // Convert to array (reverse to show chronological)
+        revenueChartData.push(...Array.from(bucketMap.entries()).map(([name, value]) => ({ name, value })).reverse());
+    }
+
+    // 7. Top Products
     const productSales = new Map<string, { quantity: number; revenue: number; name: string }>();
 
-    todayOrders.forEach(order => {
+    currentOrders.forEach(order => {
         order.items.forEach(item => {
             const existing = productSales.get(item.productId) || { quantity: 0, revenue: 0, name: '' };
             const product = productMap.get(item.productId);
@@ -95,8 +161,8 @@ export function calculateDashboardStats(
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
 
-    // Category revenue
-    const categoryRevenue = todayOrders.reduce((acc, order) => {
+    // 8. Category Revenue
+    const categoryRevenue = currentOrders.reduce((acc, order) => {
         order.items.forEach(item => {
             const product = productMap.get(item.productId);
             const category = product?.category || 'Other';
@@ -113,14 +179,14 @@ export function calculateDashboardStats(
     }, [] as { category: string; revenue: number }[]);
 
     return {
-        todayRevenue,
-        yesterdayRevenue,
-        totalOrders,
-        yesterdayOrders: yesterdayOrdersCount,
+        totalRevenue,
+        previousRevenue,
+        totalOrders: totalOrdersCount,
+        previousOrders: previousOrdersCount,
         activeCustomers,
         avgOrderValue,
         ordersByStatus,
-        revenueByDay,
+        revenueChartData,
         topProducts,
         categoryRevenue
     };

@@ -327,7 +327,7 @@ export default function CartPage() {
                 <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-10 w-10">
                     <ArrowLeft className="w-6 h-6" />
                 </Button>
-                <h1 className="text-xl font-headline font-bold">{t('yourCart', language)}</h1>
+                <h1 className="text-xl font-headline font-bold text-gray-900">{t('yourCart', language)}</h1>
             </div>
 
             <div className="flex-1 container max-w-2xl mx-auto p-4 space-y-4">
@@ -335,7 +335,7 @@ export default function CartPage() {
                 {cart.length > 0 && (
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-2">
                         <div className="flex justify-between text-xs font-semibold">
-                            <span className={finalTotal >= FREE_DELIVERY_THRESHOLD ? 'text-green-600' : 'text-muted-foreground'}>
+                            <span className={finalTotal >= FREE_DELIVERY_THRESHOLD ? 'text-primary' : 'text-muted-foreground'}>
                                 {finalTotal >= FREE_DELIVERY_THRESHOLD
                                     ? 'Free Delivery Unlocked!'
                                     : `Add ₹${(FREE_DELIVERY_THRESHOLD - finalTotal).toFixed(0)} for Free Delivery`}
@@ -346,93 +346,77 @@ export default function CartPage() {
                     </div>
                 )}
 
-                {/* Cart Items */}
+// Cart Items
                 {cart.length > 0 ? (
                     <div className="space-y-3">
                         <AnimatePresence mode="popLayout">
                             {cart.map((item) => (
-                                <motion.div
-                                    key={`${item.product.id}-${item.isCut}`}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0, x: 0 }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    className="relative flex items-center gap-4 bg-white p-3 rounded-xl shadow-sm border border-gray-100 overflow-hidden touch-pan-y"
-                                    drag="x"
-                                    dragConstraints={{ left: -100, right: 0 }}
-                                    dragElastic={0.1}
-                                    style={{ touchAction: 'pan-y' }}
-                                    onDragEnd={(_, info) => {
-                                        if (info.offset.x < -60) {
-                                            updateCartQuantity(item.product.id, item.isCut, 0);
-                                        }
-                                    }}
-                                >
-                                    {/* Visual cue for delete action behind the item - absolute positioned */}
-                                    <div className="absolute inset-y-0 right-0 w-24 bg-destructive/10 z-0 flex items-center justify-end pr-4 rounded-r-xl">
+                                <div key={`${item.product.id}-${item.isCut}`} className="relative group">
+                                    {/* Swipe Background Layer - Behind Content */}
+                                    <div className="absolute inset-0 bg-destructive/10 rounded-xl flex items-center justify-end pr-6 z-0">
                                         <Trash2 className="text-destructive h-6 w-6" />
                                     </div>
 
-                                    {/* Content Container with z-index to sit above the delete cue background but drag with the card. 
-                                        Actually, framer-motion drag moves the whole element. 
-                                        To show background *behind*, we need a structured parent or background element that doesn't move.
-                                        
-                                        Better Approach:
-                                        Use a wrapper for the background, and drag the foreground content.
-                                    */}
-
-                                    {/* Simplified Approach matching previous CartSheet: Just drag the whole thing and let it fly off? 
-                                        The previous code had the background queue *inside* the motion div but z-indexed -1. 
-                                        Let's replicate that EXACTLY.
-                                    */}
-
-                                    <div className="absolute inset-y-0 right-0 w-32 bg-destructive z-[-1] flex items-center justify-end pr-6 rounded-r-xl">
-                                        <Trash2 className="text-destructive-foreground h-6 w-6" />
-                                    </div>
-                                    <div className="relative h-16 w-16 rounded-lg overflow-hidden shrink-0 bg-gray-100">
-                                        <Image
-                                            src={item.product.imageUrl || `https://picsum.photos/seed/${item.product.id}/100/100`}
-                                            alt={item.product.name}
-                                            fill
-                                            className="object-cover"
-                                        />
-                                    </div>
-
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <h4 className="font-semibold text-sm line-clamp-1">{getProductName(item.product, language)}</h4>
-                                            {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1"><Slice className="h-3 w-3" />Cut</Badge>}
+                                    {/* Draggable Foreground Layer */}
+                                    <motion.div
+                                        layout
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0, x: 0 }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        className="relative z-10 flex items-center gap-4 bg-white p-3 rounded-xl shadow-sm border border-gray-100 overflow-hidden touch-pan-y"
+                                        drag="x"
+                                        dragConstraints={{ left: -100, right: 0 }}
+                                        dragElastic={0.1}
+                                        style={{ touchAction: 'pan-y' }}
+                                        onDragEnd={(_, info) => {
+                                            if (info.offset.x < -60) {
+                                                updateCartQuantity(item.product.id, item.isCut, 0);
+                                            }
+                                        }}
+                                        whileDrag={{ scale: 0.98 }}
+                                    >
+                                        <div className="relative h-16 w-16 rounded-lg overflow-hidden shrink-0 bg-gray-50 border border-gray-100">
+                                            <Image
+                                                src={item.product.imageUrl || `https://picsum.photos/seed/${item.product.id}/100/100`}
+                                                alt={item.product.name}
+                                                fill
+                                                className="object-cover"
+                                            />
                                         </div>
-                                        <p className="text-xs text-muted-foreground font-sans mt-1">
-                                            ₹{item.product.pricePerUnit}
-                                            {item.isCut && ` + ₹${item.product.cutCharge || settings.defaultCutCharge}`}
-                                        </p>
-                                    </div>
 
-                                    <div className="flex items-center gap-1 shrink-0">
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="h-8 w-8 rounded-full"
-                                            onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
-                                        >
-                                            <Minus className="h-4 w-4" />
-                                        </Button>
-                                        <div className="w-8 flex items-center justify-center text-sm font-semibold">
-                                            {item.quantity}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <h4 className="font-bold text-sm text-gray-900 line-clamp-1">{getProductName(item.product, language)}</h4>
+                                                {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1 border-primary/30 text-primary bg-primary/5"><Slice className="h-3 w-3" />Cut</Badge>}
+                                            </div>
+                                            <p className="text-sm font-bold text-gray-900 mt-1">
+                                                ₹{item.product.pricePerUnit}
+                                                {item.isCut && <span className="text-muted-foreground font-normal text-xs ml-1">(+₹{item.product.cutCharge || settings.defaultCutCharge} cut)</span>}
+                                            </p>
                                         </div>
-                                        <Button
-                                            variant="outline"
-                                            size="icon"
-                                            className="h-8 w-8 rounded-full"
-                                            onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                        </Button>
-                                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10 rounded-full ml-1" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </motion.div>
+
+                                        <div className="flex items-center gap-3 shrink-0">
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                className="h-8 w-8 rounded-full border-primary/20 bg-primary/5 text-primary hover:bg-primary hover:text-white transition-colors"
+                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                                            >
+                                                <Minus className="h-4 w-4" strokeWidth={2.5} />
+                                            </Button>
+                                            <div className="w-6 flex items-center justify-center text-sm font-bold text-gray-900">
+                                                {item.quantity}
+                                            </div>
+                                            <Button
+                                                size="icon"
+                                                className="h-8 w-8 rounded-full bg-primary text-white shadow-sm hover:bg-primary/90"
+                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                                            >
+                                                <Plus className="h-4 w-4" strokeWidth={2.5} />
+                                            </Button>
+                                        </div>
+                                    </motion.div>
+                                </div>
                             ))}
                         </AnimatePresence>
                     </div>
@@ -460,8 +444,8 @@ export default function CartPage() {
                 <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 pb-8 z-40 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
                     <div className="container max-w-2xl mx-auto space-y-3">
                         <div className="flex justify-between items-center text-lg font-bold">
-                            <span>{t('total', language)}</span>
-                            <span className="font-sans">&#8377;{finalTotal.toFixed(2)}</span>
+                            <span className="text-gray-900">{t('total', language)}</span>
+                            <span className="font-sans text-xl text-primary font-extrabold">&#8377;{finalTotal.toFixed(2)}</span>
                         </div>
                         {!isMinOrderMet && (
                             <p className="text-center text-sm text-destructive font-medium bg-destructive/10 p-1 rounded">
@@ -587,7 +571,7 @@ export default function CartPage() {
                         <div className="space-y-3">
                             <Label className="text-base font-semibold">Payment Method</Label>
                             <div className="grid grid-cols-1 gap-3">
-                                <div className="flex items-center space-x-3 border p-3 rounded-lg bg-green-50 border-green-200 cursor-pointer relative overflow-hidden">
+                                <div className="flex items-center space-x-3 border p-3 rounded-lg bg-primary/10 border-primary/20 cursor-pointer relative overflow-hidden">
                                     <div className="h-4 w-4 rounded-full border border-primary bg-primary flex items-center justify-center">
                                         <div className="h-2 w-2 rounded-full bg-white" />
                                     </div>

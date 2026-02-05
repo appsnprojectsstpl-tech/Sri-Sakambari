@@ -37,7 +37,7 @@ interface CartSheetProps {
   onOpenChange: (isOpen: boolean) => void;
   cart: CartItem[];
   cartTotal: number;
-  updateCartQuantity: (productId: string, isCut: boolean, quantity: number) => void;
+  updateCartQuantity: (productId: string, isCut: boolean, quantity: number, variantId?: string) => void;
   clearCart: () => void;
 }
 
@@ -123,6 +123,17 @@ export default function CartSheet({
       }
     }
 
+    // Validate phone number format (Indian mobile numbers: 10 digits, starts with 6-9)
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(deliveryInfo.phone.replace(/\s+/g, ''))) {
+      toast({
+        variant: "destructive",
+        title: 'Invalid Phone Number',
+        description: 'Please enter a valid 10-digit Indian mobile number starting with 6-9.',
+      });
+      return;
+    }
+
     if (!agreedToTerms) {
       toast({
         variant: 'destructive',
@@ -156,30 +167,62 @@ export default function CartSheet({
         const nextId = lastId + 1;
         const generatedId = `ORDER-${String(nextId).padStart(4, '0')}`;
 
-        // 2. Read Product Stocks
-        const productReads = cart.map(item => ({
-          ref: doc(firestore, 'products', item.product.id),
-          qty: item.quantity,
-          name: item.product.name
-        }));
-        const productSnapshots = await Promise.all(productReads.map(p => transaction.get(p.ref)));
+        // 2. Consolidate Product Reads (Deduplicate)
+        const uniqueProductIds = Array.from(new Set(cart.map(item => item.product.id)));
+        const productRefs = uniqueProductIds.map(id => doc(firestore, 'products', id));
+        const productSnapshots = await Promise.all(productRefs.map(ref => transaction.get(ref)));
 
-        // 3. Verify Stock
-        productSnapshots.forEach((snap, index) => {
-          if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
-          const currentStock = snap.data().stockQuantity || 0;
-          if (currentStock < productReads[index].qty) {
-            throw new Error(`Insufficient stock for ${productReads[index].name}. Available: ${currentStock}`);
-          }
+        const productMap = new Map();
+        productSnapshots.forEach(snap => {
+          if (snap.exists()) productMap.set(snap.id, { ref: snap.ref, data: snap.data() });
         });
+
+        // 3. Verify Stock & Prepare Updates
+        // We track updated state in memory to handle multiple cart items affecting same product
+        const productUpdates = new Map(); // productId -> data (clone)
+
+        for (const item of cart) {
+          const productInfo = productMap.get(item.product.id);
+          if (!productInfo) throw new Error(`Product ${item.product.name} not found.`);
+
+          // Get current state (either from initial read or ongoing update)
+          let currentData = productUpdates.get(item.product.id);
+          if (!currentData) {
+            // Initialize clone from snapshot
+            currentData = JSON.parse(JSON.stringify(productInfo.data));
+            productUpdates.set(item.product.id, currentData);
+          }
+
+          if (item.selectedVariant) {
+            const variants = currentData.variants || [];
+            const vIndex = variants.findIndex((v: any) => v.id === item.selectedVariant?.id);
+
+            if (vIndex === -1) throw new Error(`Variant ${item.selectedVariant.unit} for ${item.product.name} is no longer available.`);
+
+            if (variants[vIndex].stock < item.quantity) {
+              throw new Error(`Insufficient stock for ${item.product.name} (${item.selectedVariant.unit}). Available: ${variants[vIndex].stock}`);
+            }
+            variants[vIndex].stock -= item.quantity;
+          } else {
+            // Regular (base) product stock
+            const currentStock = currentData.stockQuantity || 0;
+            if (currentStock < item.quantity) {
+              throw new Error(`Insufficient stock for ${item.product.name}. Available: ${currentStock}`);
+            }
+            currentData.stockQuantity -= item.quantity;
+          }
+        }
 
         // 4. Update Counter
         transaction.set(counterRef, { lastId: nextId }, { merge: true });
 
-        // 5. Update Stocks
-        productSnapshots.forEach((snap, index) => {
-          const newStock = (snap.data().stockQuantity || 0) - productReads[index].qty;
-          transaction.update(productReads[index].ref, { stockQuantity: newStock });
+        // 5. Commit Stock Updates
+        productUpdates.forEach((data, productId) => {
+          const ref = productMap.get(productId).ref;
+          transaction.update(ref, {
+            stockQuantity: data.stockQuantity,
+            variants: data.variants || []
+          });
         });
 
         // 6. Create Order
@@ -194,12 +237,14 @@ export default function CartSheet({
           items: cart.map(item => ({
             productId: item.product.id,
             qty: item.quantity,
-            priceAtOrder: item.product.pricePerUnit,
+            priceAtOrder: item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit,
             isCut: item.isCut,
             cutCharge: item.isCut ? (item.product.cutCharge || 0) : 0,
             name: item.product.name,
             name_te: item.product.name_te,
-            unit: item.product.unit,
+            unit: item.selectedVariant ? item.selectedVariant.unit : item.product.unit,
+            variantId: item.selectedVariant?.id,
+            variantUnit: item.selectedVariant?.unit
           })),
           totalAmount: finalTotal,
           paymentMode: 'COD',
@@ -233,12 +278,14 @@ export default function CartSheet({
         items: cart.map(item => ({
           productId: item.product.id,
           qty: item.quantity,
-          priceAtOrder: item.product.pricePerUnit,
+          priceAtOrder: item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit,
           isCut: item.isCut,
           cutCharge: item.isCut ? (item.product.cutCharge || 0) : 0,
           name: item.product.name,
           name_te: item.product.name_te,
-          unit: item.product.unit,
+          unit: item.selectedVariant ? item.selectedVariant.unit : item.product.unit,
+          variantId: item.selectedVariant?.id,
+          variantUnit: item.selectedVariant?.unit
         })),
         totalAmount: finalTotal,
         paymentMode: 'COD',
@@ -360,7 +407,7 @@ export default function CartSheet({
                 <AnimatePresence mode="popLayout">
                   {cart.map((item) => (
                     <motion.div
-                      key={`${item.product.id}-${item.isCut}`}
+                      key={`${item.product.id}-${item.isCut}-${item.selectedVariant?.id || 'base'}`}
                       className="relative flex items-center gap-4 bg-background p-2 rounded-lg overflow-hidden touch-pan-y shadow-sm border border-gray-100"
                       initial={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: -100 }}
@@ -371,7 +418,7 @@ export default function CartSheet({
                       style={{ touchAction: 'pan-y' }}
                       onDragEnd={(_, info) => {
                         if (info.offset.x < -60) {
-                          updateCartQuantity(item.product.id, item.isCut, 0);
+                          updateCartQuantity(item.product.id, item.isCut, 0, item.selectedVariant?.id);
                         }
                       }}
                     >
@@ -380,17 +427,26 @@ export default function CartSheet({
                         <Trash2 className="text-destructive-foreground h-6 w-6" />
                       </div>
 
-                      <div className="relative h-16 w-16 rounded-md overflow-hidden shrink-0">
-                        <Image src={item.product.imageUrl || `https://picsum.photos/seed/${item.product.id}/100/100`} alt={item.product.name} fill className="object-cover" data-ai-hint={item.product.imageHint || ''} />
+                      <div className="relative h-16 w-16 rounded-md overflow-hidden shrink-0 bg-gray-100">
+                        {item.product.imageUrl ? (
+                          <Image src={item.product.imageUrl} alt={item.product.name} fill className="object-cover" data-ai-hint={item.product.imageHint || ''} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <ShoppingCart className="w-8 h-8" />
+                          </div>
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-sm line-clamp-1">{getProductName(item.product, language)}</h4>
+                          <h4 className="font-semibold text-sm line-clamp-1">
+                            {getProductName(item.product, language)}
+                            {item.selectedVariant && <span className="text-muted-foreground font-normal ml-1">({item.selectedVariant.unit})</span>}
+                          </h4>
                           {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1"><Slice className="h-3 w-3" />Cut</Badge>}
                         </div>
                         <p className="text-xs text-muted-foreground font-sans">
-                          ₹{item.product.pricePerUnit}
-                          {item.isCut && ` + ₹${item.product.cutCharge || settings.defaultCutCharge}`}
+                          ₹{item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit}
+                          {item.isCut && ` + ₹${item.product.cutCharge || settings.defaultCutCharge} (Cut)`}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -398,7 +454,7 @@ export default function CartSheet({
                           variant="outline"
                           size="icon"
                           className="h-8 w-8 rounded-full"
-                          onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                          onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1), item.selectedVariant?.id)}
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -409,11 +465,11 @@ export default function CartSheet({
                           variant="outline"
                           size="icon"
                           className="h-8 w-8 rounded-full"
-                          onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                          onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1, item.selectedVariant?.id)}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10 rounded-full" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}>
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10 rounded-full" onClick={() => updateCartQuantity(item.product.id, item.isCut, 0, item.selectedVariant?.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -494,20 +550,25 @@ export default function CartSheet({
               <h4 className="font-semibold text-base">Order Items</h4>
               <div className="space-y-3 bg-muted/20 p-3 rounded-lg">
                 {cart.map((item) => (
-                  <div key={`${item.product.id}-${item.isCut}`} className="flex items-center gap-3 text-sm">
+                  <div key={`${item.product.id}-${item.isCut}-${item.selectedVariant?.id || 'base'}`} className="flex items-center gap-3 text-sm">
                     <div className="flex-1">
                       <div className="font-medium flex items-center gap-2">
                         {getProductName(item.product, language)}
+                        {item.selectedVariant && <span className="text-muted-foreground font-normal">({item.selectedVariant.unit})</span>}
                         {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-xs"><Slice className="h-3 w-3" />Cut</Badge>}
                       </div>
-                      <p className="text-muted-foreground font-sans">&#8377;{item.product.pricePerUnit} / {item.product.unit}</p>
+                      <p className="text-muted-foreground font-sans">
+                        &#8377;{item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit}
+                        {item.selectedVariant ? ` / ${item.selectedVariant.unit}` : ` / ${item.product.unit}`}
+                        {item.isCut && ` + ₹${item.product.cutCharge || settings.defaultCutCharge} (Cut)`}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
                         size="icon"
                         className="h-8 w-8 rounded-full"
-                        onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                        onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1), item.selectedVariant?.id)}
                       >
                         <Minus className="h-5 w-5" />
                       </Button>
@@ -518,7 +579,7 @@ export default function CartSheet({
                         variant="outline"
                         size="icon"
                         className="h-8 w-8 rounded-full"
-                        onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                        onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1, item.selectedVariant?.id)}
                       >
                         <Plus className="h-5 w-5" />
                       </Button>
@@ -526,7 +587,7 @@ export default function CartSheet({
                         variant="ghost"
                         size="icon"
                         className="text-destructive h-8 w-8 hover:bg-destructive/10"
-                        onClick={() => updateCartQuantity(item.product.id, item.isCut, 0)}
+                        onClick={() => updateCartQuantity(item.product.id, item.isCut, 0, item.selectedVariant?.id)}
                       >
                         <Trash2 className="h-5 w-5" />
                       </Button>

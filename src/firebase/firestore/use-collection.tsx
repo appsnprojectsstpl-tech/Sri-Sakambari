@@ -83,7 +83,10 @@ export function useCollection<T>(
   const memoizedConstraints = useConstraintsMemoize(options.constraints);
 
   useEffect(() => {
+    console.log(`useCollection: Starting fetch for ${collectionName}, disabled: ${disabled}, constraints:`, memoizedConstraints);
+    
     if (!firestore || disabled) {
+      console.log(`useCollection: Skipping fetch for ${collectionName} - firestore: ${!!firestore}, disabled: ${disabled}`);
       setData([]); // Return empty array if disabled
       setLoading(false);
       return;
@@ -120,15 +123,18 @@ export function useCollection<T>(
         q,
         (querySnapshot) => {
           const items: T[] = [];
+          console.log(`useCollection: Received ${querySnapshot.docs.length} documents from ${collectionName}`);
           querySnapshot.forEach((doc) => {
             const docData = doc.data();
             const convertedData = convertTimestamps(docData);
             items.push({ id: doc.id, ...convertedData } as T);
           });
+          console.log(`useCollection: Processed ${items.length} items from ${collectionName}`);
           setData(items);
           setLoading(false);
         },
         (err: FirestoreError) => {
+          console.error(`useCollection: Error fetching collection ${collectionName}:`, err);
           logger.error(`Error fetching collection ${collectionName}:`, err);
           setError(getFirebaseErrorMessage(err)); // Cast to FirestoreError as getFirebaseErrorMessage returns string
           setData([]); // Set data to empty array on error to avoid breaking UI

@@ -1,5 +1,5 @@
 export const settings = {
-    minOrderValue: 100,
+    minOrderValue: 150,
     deliveryFreeKm: 3,
     perKmChargeAfterFree: 10, // Example value, in Rs.
     newNallakuntaLatLng: {

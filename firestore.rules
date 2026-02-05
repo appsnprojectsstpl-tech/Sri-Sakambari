@@ -12,11 +12,15 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Products: Public Read, Admin Write (Auth users can update for stock)
+    // Products: Public Read, Admin Write (Auth users can update STOCK ONLY)
     match /products/{productId} {
       allow read: if true;
       allow create, delete: if isAdmin();
-      allow update: if isAuth(); // Needed for client-side stock deduction
+      allow update: if isAuth() && (
+        isAdmin() || 
+        // Allow users to update ONLY stockQuantity
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stockQuantity']))
+      );
     }
     
     // Categories: Public Read, Admin Write
@@ -33,7 +37,7 @@ service cloud.firestore {
     // Orders: Create/Read Own
     match /orders/{orderId} {
       allow read: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
-      allow create: if isAuth();
+      allow create: if isAuth() && request.resource.data.customerId == request.auth.uid;
       allow update: if isAuth() && (resource.data.customerId == request.auth.uid || isAdmin());
     }
     

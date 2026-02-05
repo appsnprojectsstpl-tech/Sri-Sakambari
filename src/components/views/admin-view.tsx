@@ -51,12 +51,15 @@ import { Database } from 'lucide-react';
 import { Bell } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { Info, Share2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
+import { Switch } from '../ui/switch';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useAuth, useFirestore, createUser, useCollection, createNotification, storage } from '@/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -87,6 +90,8 @@ import CouponsTab from '@/components/admin/coupons-tab';
 import WhatsappTab from '@/components/admin/whatsapp-tab';
 import { getAdminPermissions, getAllowedTabs } from '@/lib/permission-config';
 import { useOrderNotification, requestNotificationPermission } from '@/hooks/useOrderNotification';
+import { ShareAppDialog } from '@/components/dialogs/share-app-dialog';
+import { useStoreStatus } from '@/hooks/use-store-status';
 
 
 
@@ -101,6 +106,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const { toast } = useToast();
   const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const { isOpen: isStoreOpen, loading: storeStatusLoading } = useStoreStatus();
 
   // Order Filters State - Moved to OrdersTab
   // Permission-based access control
@@ -116,6 +123,29 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
   // Enable order notifications for admins
   useOrderNotification(adminUser.role);
+
+  // Toggle store status
+  const handleStoreToggle = async (checked: boolean) => {
+    if (!firestore) return;
+    try {
+      await updateDoc(doc(firestore, 'storeStatus', 'current'), {
+        isOpen: checked,
+        lastUpdated: serverTimestamp(),
+        updatedBy: adminUser.id
+      });
+      toast({
+        title: checked ? 'Store Opened' : 'Store Closed',
+        description: checked ? 'Customers can now place orders' : 'Orders are temporarily paused'
+      });
+    } catch (error) {
+      console.error('Error toggling store status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update store status'
+      });
+    }
+  };
 
   // Request notification permission on mount
   useEffect(() => {
@@ -668,6 +698,33 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             </ScrollArea>
           </PopoverContent>
         </Popover>
+
+        {/* Store Status Toggle */}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card">
+          <span className="text-sm text-muted-foreground">Store:</span>
+          <Switch
+            checked={isStoreOpen}
+            onCheckedChange={handleStoreToggle}
+            disabled={storeStatusLoading}
+            className="data-[state=checked]:bg-green-500"
+          />
+          <span className={cn(
+            "text-sm font-medium",
+            isStoreOpen ? "text-green-600" : "text-red-600"
+          )}>
+            {isStoreOpen ? "Open" : "Closed"}
+          </span>
+        </div>
+
+        {/* Share Button */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => setShowShareDialog(true)}
+          className="border-primary text-primary hover:bg-primary/10"
+        >
+          <Share2 className="h-5 w-5" />
+        </Button>
       </div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full pb-24">
         <TabsList className={`grid w-full h-auto ${allowedTabs.length <= 3 ? 'grid-cols-3' :
@@ -857,6 +914,12 @@ export default function AdminView({ user: adminUser }: { user: User }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialogs */}
+      <ShareAppDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+      />
 
     </div >
   );

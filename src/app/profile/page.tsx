@@ -18,7 +18,7 @@ import dynamic from 'next/dynamic';
 import { doc, getDoc, query, collection, where, documentId, getDocs, updateDoc } from 'firebase/firestore';
 import { chunkArray } from '@/firebase/firestore/utils';
 import { logger, safeLocalStorage } from '@/lib/logger';
-import { User, Package, BarChart3, Settings, HelpCircle, Download, Ban, Clock, Edit } from 'lucide-react';
+import { User, Package, BarChart3, Settings, HelpCircle, Download, Ban, Clock, Edit, Share2 } from 'lucide-react';
 import { generateSalesOrderPDF } from '@/lib/pdf-utils';
 import { OrderTimeline } from '@/components/order-timeline';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -36,6 +36,10 @@ const EditProfile = dynamic(() => import('@/components/profile/edit-profile'), {
 const NotificationSettings = dynamic(() => import('@/components/profile/notification-settings'), { ssr: false });
 const PaymentMethods = dynamic(() => import('@/components/profile/payment-methods'), { ssr: false });
 
+import { ShareAppDialog } from '@/components/dialogs/share-app-dialog';
+import { useStoreStatus } from '@/hooks/use-store-status';
+import { cn } from '@/lib/utils';
+
 export default function ProfilePage() {
     const { user, loading: userLoading } = useUser();
     const { toast } = useToast();
@@ -44,6 +48,8 @@ export default function ProfilePage() {
     const auth = useAuth();
     const firestore = useFirestore();
     const { notifications } = useUserNotifications();
+    const { isOpen: isStoreOpen, loading: storeStatusLoading } = useStoreStatus();
+    const [showShareDialog, setShowShareDialog] = useState(false);
 
     const { data: rawOrders, loading: ordersLoading } = useCollection<Order>('orders', {
         constraints: user?.id ? [['where', 'customerId', '==', user.id]] : [],
@@ -427,12 +433,65 @@ export default function ProfilePage() {
                     <TabsContent value="settings" className="space-y-4">
                         <EditProfile user={user} onUpdate={handleUpdateProfile} />
                         <NotificationSettings user={user} />
+
+                        {/* Store Status Card */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Store Status</CardTitle>
+                                <CardDescription>Current store availability</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {storeStatusLoading ? (
+                                    <p className="text-sm text-muted-foreground">Loading...</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn(
+                                                "w-3 h-3 rounded-full",
+                                                isStoreOpen ? "bg-green-500" : "bg-red-500"
+                                            )} />
+                                            <span className="font-medium">
+                                                {isStoreOpen ? "Store is Open" : "Store is Closed"}
+                                            </span>
+                                        </div>
+                                        {!isStoreOpen && (
+                                            <p className="text-sm text-muted-foreground">
+                                                You can browse products but ordering is temporarily disabled.
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Share App Card */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Share App</CardTitle>
+                                <CardDescription>
+                                    Share this app with friends and family
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <Button onClick={() => setShowShareDialog(true)} className="w-full">
+                                    <Share2 className="w-4 h-4 mr-2" />
+                                    Share Sri Sakambari
+                                </Button>
+                            </CardContent>
+                        </Card>
+
                         <PaymentMethods user={user} />
                         <AddressManager />
                         <HelpSupport />
                     </TabsContent>
                 </Tabs>
             </main>
+
+            {/* Share Dialog */}
+            <ShareAppDialog
+                open={showShareDialog}
+                onOpenChange={setShowShareDialog}
+            />
         </div>
     );
 }

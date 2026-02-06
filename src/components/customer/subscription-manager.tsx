@@ -74,7 +74,7 @@ export default function CustomerSubscriptions() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!auth?.currentUser) {
       toast({
         variant: 'destructive',
@@ -161,7 +161,7 @@ export default function CustomerSubscriptions() {
     }
 
     setIsSubmitting(true);
-    
+
     try {
       const subscriptionData = {
         ...formData,
@@ -189,7 +189,7 @@ export default function CustomerSubscriptions() {
       resetForm();
     } catch (error) {
       console.error('Error saving subscription:', error);
-      
+
       // Provide more specific error messages based on error type
       let errorMessage = 'Failed to save subscription';
       if (error instanceof Error) {
@@ -205,7 +205,7 @@ export default function CustomerSubscriptions() {
           errorMessage = error.message;
         }
       }
-      
+
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -243,7 +243,7 @@ export default function CustomerSubscriptions() {
         });
       } catch (error) {
         console.error('Error deleting subscription:', error);
-        
+
         // Provide more specific error messages based on error type
         let errorMessage = 'Failed to delete subscription';
         if (error instanceof Error) {
@@ -257,7 +257,7 @@ export default function CustomerSubscriptions() {
             errorMessage = error.message;
           }
         }
-        
+
         toast({
           variant: 'destructive',
           title: 'Error',
@@ -273,18 +273,18 @@ export default function CustomerSubscriptions() {
         await pauseSubscription(subscription.id);
         toast({
           title: 'Subscription Paused',
-          description: `"${subscription.planName}" subscription has been paused"
+          description: `"${subscription.planName}" subscription has been paused`
         });
       } else {
         await resumeSubscription(subscription.id);
         toast({
           title: 'Subscription Resumed',
-          description: `"${subscription.planName}" subscription has been resumed"
+          description: `"${subscription.planName}" subscription has been resumed`
         });
       }
     } catch (error) {
       console.error('Error toggling subscription:', error);
-      
+
       // Provide more specific error messages based on error type
       let errorMessage = 'Failed to update subscription status';
       if (error instanceof Error) {
@@ -298,7 +298,7 @@ export default function CustomerSubscriptions() {
           errorMessage = error.message;
         }
       }
-      
+
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -317,7 +317,7 @@ export default function CustomerSubscriptions() {
   const updateItem = (index: number, field: 'productId' | 'qty', value: string | number) => {
     setFormData(prev => ({
       ...prev,
-      items: prev.items.map((item, i) => 
+      items: prev.items.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
       )
     }));
@@ -336,7 +336,7 @@ export default function CustomerSubscriptions() {
       const newCustomDays = customDays.includes(day)
         ? customDays.filter(d => d !== day)
         : [...customDays, day];
-      
+
       return {
         ...prev,
         customDays: newCustomDays
@@ -366,11 +366,11 @@ export default function CustomerSubscriptions() {
 
   const handleBulkPauseResume = async () => {
     if (selectedSubscriptions.size === 0) return;
-    
+
     setIsBulkActionLoading(true);
     const selectedList = subscriptions.filter(s => selectedSubscriptions.has(s.id));
     const allActive = selectedList.every(s => s.isActive);
-    
+
     try {
       if (allActive) {
         await Promise.all(selectedList.map(s => pauseSubscription(s.id)));
@@ -400,10 +400,10 @@ export default function CustomerSubscriptions() {
 
   const handleBulkDelete = async () => {
     if (selectedSubscriptions.size === 0) return;
-    
+
     const confirmed = window.confirm(`Are you sure you want to delete ${selectedSubscriptions.size} selected subscriptions? This action cannot be undone.`);
     if (!confirmed) return;
-    
+
     setIsBulkActionLoading(true);
     try {
       await Promise.all(Array.from(selectedSubscriptions).map(id => deleteSubscription(id)));
@@ -709,27 +709,28 @@ export default function CustomerSubscriptions() {
                     />
                     <div>
                       <CardTitle className="text-lg">{subscription.planName}</CardTitle>
-                    <CardDescription>
-                      <div className="flex items-center space-x-4 text-sm">
-                        <span className="flex items-center">
-                          <Calendar className="w-4 h-4 mr-1" />
-                          {subscription.frequency}
-                        </span>
-                        <span className="flex items-center">
-                          <MapPin className="w-4 h-4 mr-1" />
-                          {subscription.area}
-                        </span>
-                        <span className="flex items-center">
-                          <Clock className="w-4 h-4 mr-1" />
-                          {subscription.deliverySlot}
-                        </span>
-                      </div>
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Badge variant={subscription.isActive ? 'default' : 'secondary'}>
-                      {subscription.isActive ? t('active', language) : t('paused', language)}
-                    </Badge>
+                      <CardDescription>
+                        <div className="flex items-center space-x-4 text-sm">
+                          <span className="flex items-center">
+                            <Calendar className="w-4 h-4 mr-1" />
+                            {subscription.frequency}
+                          </span>
+                          <span className="flex items-center">
+                            <MapPin className="w-4 h-4 mr-1" />
+                            {subscription.area}
+                          </span>
+                          <span className="flex items-center">
+                            <Clock className="w-4 h-4 mr-1" />
+                            {subscription.deliverySlot}
+                          </span>
+                        </div>
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant={subscription.isActive ? 'default' : 'secondary'}>
+                        {subscription.isActive ? t('active', language) : t('paused', language)}
+                      </Badge>
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -749,7 +750,7 @@ export default function CustomerSubscriptions() {
                       })}
                     </div>
                   </div>
-                  
+
                   {subscription.notes && (
                     <div>
                       <h4 className="font-medium mb-1">{t('notes', language)}</h4>

@@ -205,7 +205,7 @@ export default function ProductCard({
                 className="mt-1 flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full w-fit active:bg-primary/20"
               >
                 <Plus className="w-2.5 h-2.5" />
-                Cut (+₹10)
+                Cut (+₹{product.cutCharge !== undefined ? product.cutCharge : 10})
               </button>
             )}
           </div>

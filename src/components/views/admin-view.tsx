@@ -82,6 +82,7 @@ import { exportOrdersToExcel } from '@/lib/excel-utils';
 import { fetchAllDocsInBatches } from '@/firebase/firestore/utils';
 import DashboardTab from '@/components/admin/dashboard-tab';
 import ProductsTab from '@/components/admin/products-tab';
+import ConfigCategoriesTab from '@/components/admin/categories-tab';
 import * as XLSX from 'xlsx';
 import OrdersTab from '@/components/admin/orders-tab';
 import SubscriptionsTab from '@/components/admin/subscriptions-tab';
@@ -107,7 +108,7 @@ export default function AdminView({ user: adminUser }: { user: User }) {
   const { language } = useLanguage();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showShareDialog, setShowShareDialog] = useState(false);
-  const { isOpen: isStoreOpen, loading: storeStatusLoading } = useStoreStatus();
+  const { isOpen: isStoreOpen, loading: storeStatusLoading, toggleStore } = useStoreStatus();
 
   // Order Filters State - Moved to OrdersTab
   // Permission-based access control
@@ -126,13 +127,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
 
   // Toggle store status
   const handleStoreToggle = async (checked: boolean) => {
-    if (!firestore) return;
     try {
-      await updateDoc(doc(firestore, 'storeStatus', 'current'), {
-        isOpen: checked,
-        lastUpdated: serverTimestamp(),
-        updatedBy: adminUser.id
-      });
+      await toggleStore(checked);
       toast({
         title: checked ? 'Store Opened' : 'Store Closed',
         description: checked ? 'Customers can now place orders' : 'Orders are temporarily paused'
@@ -764,6 +760,8 @@ export default function AdminView({ user: adminUser }: { user: User }) {
             />
           </TabsContent>
         )}
+
+
 
         {permissions?.canAccessOrders && (
           <TabsContent value="orders">

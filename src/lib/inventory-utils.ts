@@ -20,8 +20,22 @@ export function getStockStatus(product: Product): StockStatus {
     // If inventory tracking is disabled
     if (!product.trackInventory) return 'NOT_TRACKED';
 
-    const stock = product.stockQuantity || 0;
     const threshold = product.lowStockThreshold || 5;
+
+    // Check Variants first (only if NOT Master Stock mode)
+    // If manageStockBy is 'weight', we rely on the main stockQuantity, effectively treating it as a simple product for status purposes.
+    if (product.variants && product.variants.length > 0 && product.manageStockBy !== 'weight') {
+        const variants = product.variants;
+        const outOfStockCount = variants.filter(v => (v.stock || 0) === 0).length;
+        const lowStockCount = variants.filter(v => (v.stock || 0) > 0 && (v.stock || 0) <= threshold).length;
+
+        if (outOfStockCount === variants.length) return 'OUT_OF_STOCK';
+        if (outOfStockCount > 0 || lowStockCount > 0) return 'LOW_STOCK';
+        return 'IN_STOCK';
+    }
+
+    // Fallback for simple products
+    const stock = product.stockQuantity || 0;
 
     if (stock === 0) return 'OUT_OF_STOCK';
     if (stock <= threshold) return 'LOW_STOCK';
@@ -129,6 +143,18 @@ export function getOutOfStockProducts(products: Product[]): Product[] {
 export function calculateInventoryValue(products: Product[]): number {
     return products.reduce((total, product) => {
         if (!product.trackInventory) return total;
+
+        // If product has variants, calculate value per variant (Unles Master Stock Mode)
+        if (product.variants && product.variants.length > 0 && product.manageStockBy !== 'weight') {
+            const variantValue = product.variants.reduce((vTotal, variant) => {
+                const vStock = variant.stock || 0;
+                const vPrice = variant.price || 0;
+                return vTotal + (vStock * vPrice);
+            }, 0);
+            return total + variantValue;
+        }
+
+        // Fallback for simple products
         const stock = product.stockQuantity || 0;
         const price = product.pricePerUnit || 0;
         return total + (stock * price);

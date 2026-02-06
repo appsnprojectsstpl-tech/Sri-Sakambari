@@ -28,8 +28,21 @@ export function StockAdjustmentDialog({
     const [quantity, setQuantity] = useState<string>('');
     const [reason, setReason] = useState('');
     const [loading, setLoading] = useState(false);
+    const [selectedVariantId, setSelectedVariantId] = useState<string>('base');
 
-    const currentStock = product?.stockQuantity || 0;
+    const hasVariants = product?.variants && product.variants.length > 0;
+
+    let currentStock = product?.stockQuantity || 0;
+    let unit = product?.unit || '';
+
+    if (hasVariants && selectedVariantId !== 'base') {
+        const variant = product!.variants!.find(v => v.id === selectedVariantId);
+        if (variant) {
+            currentStock = variant.stock;
+            unit = variant.unit;
+        }
+    }
+
     const quantityNum = parseFloat(quantity) || 0;
     const newStock = calculateNewStock(currentStock, adjustmentType, quantityNum);
 
@@ -38,11 +51,19 @@ export function StockAdjustmentDialog({
 
         setLoading(true);
         try {
-            await onAdjust(product.id, newStock, adjustmentType, quantityNum, reason);
+            await onAdjust(
+                product.id,
+                newStock,
+                adjustmentType,
+                quantityNum,
+                reason,
+                (hasVariants && selectedVariantId !== 'base') ? selectedVariantId : undefined
+            );
             // Reset form
             setQuantity('');
             setReason('');
             setAdjustmentType('ADD');
+            setSelectedVariantId('base');
             onOpenChange(false);
         } catch (error) {
             console.error('Failed to adjust stock:', error);
@@ -64,10 +85,35 @@ export function StockAdjustmentDialog({
                 </DialogHeader>
 
                 <div className="space-y-4 py-4">
+                    {/* Variant Selector */}
+                    {hasVariants && (
+                        <div className="space-y-2">
+                            <Label>Select Variant</Label>
+                            <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="base">Total Stock (Read-only)</SelectItem>
+                                    {product.variants!.map(v => (
+                                        <SelectItem key={v.id} value={v.id}>
+                                            {v.unit} - Current: {v.stock}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            {selectedVariantId === 'base' && (
+                                <p className="text-xs text-muted-foreground text-yellow-600">
+                                    Please select a variant to adjust its stock.
+                                </p>
+                            )}
+                        </div>
+                    )}
+
                     {/* Current Stock */}
                     <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                         <span className="text-sm font-medium">Current Stock:</span>
-                        <span className="text-lg font-bold">{currentStock} {product.unit}</span>
+                        <span className="text-lg font-bold">{currentStock} {unit}</span>
                     </div>
 
                     {/* Adjustment Type */}
@@ -102,14 +148,15 @@ export function StockAdjustmentDialog({
 
                     {/* Quantity */}
                     <div className="space-y-2">
-                        <Label>Quantity ({product.unit})</Label>
+                        <Label>Quantity ({unit})</Label>
                         <Input
                             type="number"
                             min="0"
                             step="0.1"
                             value={quantity}
                             onChange={(e) => setQuantity(e.target.value)}
-                            placeholder={`Enter quantity in ${product.unit}`}
+                            placeholder={`Enter quantity in ${unit}`}
+                            disabled={hasVariants && selectedVariantId === 'base'}
                         />
                     </div>
 
@@ -130,7 +177,7 @@ export function StockAdjustmentDialog({
                             <span className="text-sm font-medium">New Stock:</span>
                             <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground line-through">{currentStock}</span>
-                                <span className="text-xl font-bold text-primary">→ {newStock} {product.unit}</span>
+                                <span className="text-xl font-bold text-primary">→ {newStock} {unit}</span>
                             </div>
                         </div>
                     )}
@@ -142,7 +189,7 @@ export function StockAdjustmentDialog({
                     </Button>
                     <Button
                         onClick={handleSubmit}
-                        disabled={!quantity || quantityNum <= 0 || loading}
+                        disabled={!quantity || quantityNum <= 0 || loading || (hasVariants && selectedVariantId === 'base')}
                     >
                         {loading ? 'Updating...' : 'Update Stock'}
                     </Button>

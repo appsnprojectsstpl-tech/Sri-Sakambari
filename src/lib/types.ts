@@ -76,6 +76,9 @@ export interface Product {
   seoTitle?: string;
   seoDescription?: string;
   keywords?: string[];
+  isSeasonal?: boolean; // New: Flag for seasonal products
+  isFeatured?: boolean; // New: Flag for featured/best-seller products
+  manageStockBy?: 'count' | 'weight' | 'volume'; // New: Master Stock Logic
 }
 
 export interface Area {
@@ -213,6 +216,7 @@ export interface StockTransaction {
   timestamp: Date;
   userId: string;
   userName?: string;
+  variantId?: string;
 }
 
 // Genkit Flow Types
@@ -243,3 +247,15 @@ export const GenerateOrderIdOutputSchema = z.object({
   orderId: z.string().describe('The newly generated, formatted order ID.'),
 });
 export type GenerateOrderIdOutput = z.infer<typeof GenerateOrderIdOutputSchema>;
+
+export interface Category {
+  id: string; // Document ID
+  name: string; // Display Name
+  icon: string; // Emoji
+  color: string; // Tailwind class string
+  displayOrder: number;
+  isActive: boolean;
+  slug?: string;
+  description?: string; // Optional description
+  createdAt?: any;
+}

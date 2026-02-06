@@ -1,20 +1,24 @@
-'use server';
+// 'use server';
+// Server Actions are not supported in static exports (Capacitor).
+// This must be deployed as a separate Cloud Function or API.
 
-/**
- * @fileOverview Translates a product name to Telugu.
- *
- * - translateProduct - A function that handles the product name translation.
- */
-
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
 import type { TranslateProductInput, TranslateProductOutput } from '@/lib/types';
-import { TranslateProductInputSchema, TranslateProductOutputSchema } from '@/lib/types';
-
 
 export async function translateProduct(input: TranslateProductInput): Promise<TranslateProductOutput> {
-  return translateProductFlow(input);
+  console.warn("AI Translation is disabled in static export mode. Deploy a backend to enable.");
+  // Mock response or throw
+  return {
+    productName: input.productName, // Return same name
+    translatedName: input.productName + " (Telugu)", // Dummy translation
+    language: 'te'
+  };
 }
+
+/*
+import { ai } from '@/ai/genkit';
+import { z } from 'genkit';
+import { TranslateProductInputSchema, TranslateProductOutputSchema } from '@/lib/types';
+
 
 const prompt = ai.definePrompt({
   name: 'translateProductPrompt',
@@ -39,3 +43,4 @@ const translateProductFlow = ai.defineFlow(
     return output!;
   }
 );
+*/

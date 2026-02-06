@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Product, StockTransaction } from '@/lib/types';
+import { Product, StockTransaction, Category } from '@/lib/types';
+import { Language } from '@/lib/translations';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +22,7 @@ import {
 } from '@/lib/inventory-utils';
 import { Search, Plus, Minus, AlertTriangle, Package, DollarSign, TrendingDown, FilePen, Trash2, PlusCircle, Upload, Loader2, Database, ChevronLeft, ChevronRight, ImagePlus } from 'lucide-react';
 
-import { useFirestore, storage } from '@/firebase';
+import { useFirestore, storage, useCollection } from '@/firebase';
 import { doc, updateDoc, addDoc, collection, serverTimestamp, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useToast } from '@/hooks/use-toast';
@@ -32,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import ProductImageGallery from '@/components/views/product-image-gallery';
 import { products as seedProducts } from '@/lib/seed-data';
+import { DEFAULT_CATEGORIES } from '@/components/customer/customer-header';
 import Image from 'next/image';
 import {
     AlertDialog,
@@ -46,6 +48,228 @@ import {
 import { getProductName } from '@/lib/translations';
 import { useLanguage } from '@/context/language-context';
 import { ProductFormSheet } from './product-form-sheet';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { GripVertical } from 'lucide-react';
+
+// Helper function to validate URL
+const isValidUrl = (url: string | undefined | null): boolean => {
+    if (!url) return false;
+    try {
+        new URL(url);
+        return url.startsWith('http://') || url.startsWith('https://');
+    } catch (_) {
+        return false;
+    }
+};
+
+interface SortableProductRowProps {
+    product: Product;
+    selectedProductIds: Set<string>;
+    toggleProductSelection: (id: string) => void;
+    handleQuickAdjust: (product: Product, delta: number) => void;
+    handleEditProduct: (product: Product) => void;
+    handleDeleteClick: (product: Product) => void;
+    firestore: any;
+    language: string;
+    categories: Category[];
+}
+
+function SortableProductRow({
+    product,
+    selectedProductIds,
+    toggleProductSelection,
+    handleQuickAdjust,
+    handleEditProduct,
+    handleDeleteClick,
+    firestore,
+    language,
+    categories
+}: SortableProductRowProps) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: product.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 20 : 1,
+        opacity: isDragging ? 0.5 : 1,
+        position: 'relative' as 'relative',
+    };
+
+    const status = getStockStatus(product);
+    const stock = product.stockQuantity || 0;
+
+    return (
+        <TableRow ref={setNodeRef} style={style} className={isDragging ? "bg-muted" : ""}>
+            <TableCell>
+                <div
+                    className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded w-8 h-8 flex items-center justify-center"
+                    {...attributes}
+                    {...listeners}
+                >
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
+            </TableCell>
+            <TableCell>
+                <Checkbox
+                    checked={selectedProductIds.has(product.id)}
+                    onCheckedChange={() => toggleProductSelection(product.id)}
+                    aria-label={`Select ${product.name}`}
+                />
+            </TableCell>
+            <TableCell>
+                {isValidUrl(product.imageUrl) ? (
+                    <Image
+                        src={product.imageUrl!}
+                        alt={product.name}
+                        width={40}
+                        height={40}
+                        className="rounded-md object-cover aspect-square"
+                    />
+                ) : (
+                    <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center text-gray-400">
+                        <ImagePlus className="w-5 h-5" />
+                    </div>
+                )}
+            </TableCell>
+            <TableCell className="font-medium">
+                <div>{getProductName(product, language as Language)}</div>
+                {product.name_te && <div className="text-xs text-muted-foreground">{product.name}</div>}
+            </TableCell>
+            <TableCell>
+                <Select
+                    defaultValue={product.category}
+                    onValueChange={(val) => {
+                        updateDoc(doc(firestore, 'products', product.id), { category: val });
+                    }}
+                >
+                    <SelectTrigger className="w-[130px] h-8 border-none bg-transparent hover:bg-accent">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {(categories && categories.length > 0 ? categories.map(c => c.name) : DEFAULT_CATEGORIES.filter(c => c.id !== 'All').map(c => c.label)).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </TableCell>
+            <TableCell className="text-right">
+                {(product.variants && product.variants.length > 0) ? (
+                    <div className="flex flex-col gap-1 text-xs">
+                        {product.variants.map((v, i) => (
+                            <div key={i} className="whitespace-nowrap">
+                                ₹{v.price} <span className="text-muted-foreground">/ {v.unit}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div>₹{product.pricePerUnit}/{product.unit}</div>
+                )}
+            </TableCell>
+            <TableCell className="text-right font-semibold">
+                {(product.variants && product.variants.length > 0 && product.manageStockBy !== 'weight') ? (
+                    <div className="flex flex-col gap-1 text-xs">
+                        {product.variants.map((v, i) => (
+                            <div key={i} className={v.stock === 0 ? 'text-destructive' : ''}>
+                                {v.stock} <span className="text-muted-foreground text-[10px]">({v.unit})</span>
+                            </div>
+                        ))}
+                        <div className="border-t mt-1 pt-1 font-bold text-muted-foreground">
+                            Total: {stock}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-end gap-2">
+                        <div className="flex flex-col text-right">
+                            <span className={stock === 0 ? 'text-destructive' : ''}>
+                                {stock} {product.manageStockBy === 'weight' && <span className="text-[10px] text-muted-foreground font-normal">{product.unit || 'Kg'}</span>}
+                            </span>
+                            {/* Show quick variant indicator if they exist but we are hiding details */}
+                            {product.variants && product.variants.length > 0 && product.manageStockBy === 'weight' && (
+                                <span className="text-[10px] text-muted-foreground italic">{product.variants.length} Sizes</span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </TableCell>
+            <TableCell className="text-right">
+                {(product.variants && product.variants.length > 0 && product.manageStockBy !== 'weight') ? (
+                    <div className="flex flex-col gap-1 text-xs">
+                        {product.variants.map((v, i) => (
+                            <div key={i} className="whitespace-nowrap text-muted-foreground">
+                                ₹{(v.price * (v.stock || 0)).toLocaleString()}
+                            </div>
+                        ))}
+                        <div className="border-t mt-1 pt-1 font-bold">
+                            ₹{product.variants.reduce((acc, v) => acc + (v.price * (v.stock || 0)), 0).toLocaleString()}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="font-medium">
+                        ₹{((product.pricePerUnit || 0) * (product.stockQuantity || 0)).toLocaleString()}
+                    </div>
+                )}
+            </TableCell>
+            <TableCell className="text-center">
+                {product.trackInventory ? (
+                    <Badge variant="outline" className={getStockStatusColor(status)}>
+                        {getStockStatusIcon(status)} {getStockStatusText(status)}
+                    </Badge>
+                ) : (
+                    <Badge variant="secondary">Untracked</Badge>
+                )}
+            </TableCell>
+            <TableCell className="text-right">
+                <div className="flex items-center justify-end gap-1">
+                    {product.trackInventory && (
+                        <>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleQuickAdjust(product, -1)}
+                            >
+                                <Minus className="h-3 w-3" />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleQuickAdjust(product, 1)}
+                            >
+                                <Plus className="h-3 w-3" />
+                            </Button>
+                        </>
+                    )}
+
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleEditProduct(product)}
+                    >
+                        <FilePen className="h-4 w-4" />
+                    </Button>
+
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => handleDeleteClick(product)}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+}
 
 interface ProductsTabProps {
     products: Product[];
@@ -53,14 +277,7 @@ interface ProductsTabProps {
     onProductUpdate?: () => void;
 }
 
-const PRODUCT_CATEGORIES = [
-    'Vegetables',
-    'Leafy Vegetables',
-    'Fruits',
-    'Dairy',
-    'Cool Drinks',
-    'Drinking Water'
-];
+// Removed PRODUCT_CATEGORIES constant in favor of dynamic categories
 
 const initialProductState: Omit<Product, 'id' | 'createdAt' | 'name_te'> = {
     name: '',
@@ -82,7 +299,7 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
     const [searchTerm, setSearchTerm] = useState('');
     const [filterStatus, setFilterStatus] = useState<'all' | StockStatus>('all');
     const [filterCategory, setFilterCategory] = useState<string>('all');
-    const [sortBy, setSortBy] = useState<'name' | 'price_asc' | 'price_desc' | 'stock_asc' | 'stock_desc'>('name');
+    const [sortBy, setSortBy] = useState<'name' | 'price_asc' | 'price_desc' | 'stock_asc' | 'stock_desc' | 'display_order'>('name');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
 
@@ -233,9 +450,56 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
     const { toast } = useToast();
     const auth = useAuth();
     const { language } = useLanguage();
+    const { data: categories } = useCollection<Category>('categories', {
+        constraints: [['orderBy', 'displayOrder', 'asc']]
+    });
 
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 50;
+
+    // DnD Sensors
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (active.id !== over?.id) {
+            const oldIndex = filteredProducts.findIndex(p => p.id === active.id);
+            const newIndex = filteredProducts.findIndex(p => p.id === over?.id);
+
+            if (oldIndex !== -1 && newIndex !== -1) {
+                const newOrdered = arrayMove(filteredProducts, oldIndex, newIndex);
+
+                // Batch update displayOrder
+                const batch = writeBatch(firestore);
+                // We update only the affected range to save writes?
+                // For simplicity, update items in the current page/view that shifted.
+                // Or update all?
+                // Let's update all in the newOrdered list to safeguard.
+                newOrdered.forEach((p, idx) => {
+                    const expectedOrder = idx; // Simple 0-based index
+                    if (p.displayOrder !== expectedOrder) {
+                        batch.update(doc(firestore, 'products', p.id), { displayOrder: expectedOrder });
+                    }
+                });
+
+                try {
+                    await batch.commit();
+                    toast({ title: "Order Updated", description: "Product display order saved." });
+                    // No need to manually set state, Firestore subscription will update.
+                    // But for optimistic UI, we might want to? 
+                    // Since specific local state isn't used for products, we wait for refresh.
+                } catch (e) {
+                    console.error("Failed to reorder", e);
+                    toast({ variant: "destructive", title: "Reorder Failed" });
+                }
+            }
+        }
+    };
 
     // Filter products
     const filteredProducts = useMemo(() => {
@@ -262,6 +526,8 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
         // Sorting
         filtered.sort((a, b) => {
             switch (sortBy) {
+                case 'display_order':
+                    return (a.displayOrder || 0) - (b.displayOrder || 0);
                 case 'price_asc':
                     return (a.pricePerUnit || 0) - (b.pricePerUnit || 0);
                 case 'price_desc':
@@ -314,26 +580,45 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
         newStock: number,
         type: string,
         quantity: number,
-        reason: string
+        reason: string,
+        variantId?: string
     ) => {
         if (!firestore || !auth?.currentUser) return;
 
         try {
             const product = products.find(p => p.id === productId);
-            if (!product) return;
+            if (!product || !firestore) return;
 
-            const previousStock = product.stockQuantity || 0;
+            let updateData: any = {
+                lastRestocked: serverTimestamp(),
+            };
+
+            let previousStock = product.stockQuantity || 0;
+            let transactionProductName = product.name;
+
+            if (variantId && product.variants) {
+                const updatedVariants = product.variants.map(v => {
+                    if (v.id === variantId) {
+                        previousStock = v.stock;
+                        transactionProductName = `${product.name} (${v.unit})`;
+                        return { ...v, stock: newStock };
+                    }
+                    return v;
+                });
+                updateData.variants = updatedVariants;
+                // Also update total stock quantity for quick view
+                updateData.stockQuantity = updatedVariants.reduce((acc, v) => acc + (v.stock || 0), 0);
+            } else {
+                updateData.stockQuantity = newStock;
+            }
 
             // Update product stock
-            await updateDoc(doc(firestore, 'products', productId), {
-                stockQuantity: newStock,
-                lastRestocked: serverTimestamp(),
-            });
+            await updateDoc(doc(firestore, 'products', productId), updateData);
 
             // Log transaction
             const transaction: Omit<StockTransaction, 'id'> = {
                 productId,
-                productName: product.name,
+                productName: transactionProductName,
                 type: type as any,
                 quantity,
                 previousStock,
@@ -341,7 +626,8 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
                 reason: reason || undefined,
                 timestamp: new Date(),
                 userId: auth.currentUser.uid,
-                userName: auth.currentUser.displayName || auth.currentUser.email || 'Admin'
+                userName: auth.currentUser.displayName || auth.currentUser.email || 'Admin',
+                variantId // Log variant ID if applicable
             };
 
             await addDoc(collection(firestore, 'stockTransactions'), {
@@ -351,7 +637,7 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
 
             toast({
                 title: 'Stock Updated',
-                description: `${product.name}: ${previousStock} → ${newStock} ${product.unit}`
+                description: `${transactionProductName}: ${previousStock} → ${newStock}`
             });
 
             onProductUpdate?.();
@@ -425,16 +711,8 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
 
 
 
-    // Helper function to validate URL
-    const isValidUrl = (url: string | undefined | null): boolean => {
-        if (!url) return false;
-        try {
-            new URL(url);
-            return url.startsWith('http://') || url.startsWith('https://');
-        } catch (_) {
-            return false;
-        }
-    };
+    // Helper function to validate URL removed from here and moved to top
+
 
 
     // Only show full loading state if we have no data yet.
@@ -536,7 +814,7 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">All Categories</SelectItem>
-                                    {PRODUCT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                    {(categories && categories.length > 0 ? categories.map(c => c.name) : DEFAULT_CATEGORIES.filter(c => c.id !== 'All').map(c => c.label)).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                                 </SelectContent>
                             </Select>
 
@@ -545,6 +823,7 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
                                     <SelectValue placeholder="Sort By" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value="display_order">Custom Order</SelectItem>
                                     <SelectItem value="name">Name (A-Z)</SelectItem>
                                     <SelectItem value="price_asc">Price (Low-High)</SelectItem>
                                     <SelectItem value="price_desc">Price (High-Low)</SelectItem>
@@ -569,177 +848,94 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
                     </div>
 
                     {/* Products Table */}
+                    {/* Products Table */}
                     <div className="border rounded-lg overflow-hidden">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead className="w-[50px]">
-                                        <Checkbox
-                                            checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length}
-                                            onCheckedChange={toggleSelectAll}
-                                            aria-label="Select all"
-                                        />
-                                    </TableHead>
-                                    <TableHead className="w-[80px]">Image</TableHead>
-                                    <TableHead>Product</TableHead>
-                                    <TableHead>Category</TableHead>
-                                    <TableHead className="text-right">Price</TableHead>
-                                    <TableHead className="text-right">Stock</TableHead>
-                                    <TableHead className="text-center">Status</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredProducts.length === 0 ? (
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                        >
+                            <Table>
+                                <TableHeader>
                                     <TableRow>
-                                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                                            No products found
-                                        </TableCell>
+                                        <TableHead className="w-[50px]"></TableHead>
+                                        <TableHead className="w-[50px]">
+                                            <Checkbox
+                                                checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length}
+                                                onCheckedChange={toggleSelectAll}
+                                                aria-label="Select all"
+                                            />
+                                        </TableHead>
+                                        <TableHead className="w-[80px]">Image</TableHead>
+                                        <TableHead>Product</TableHead>
+                                        <TableHead>Category</TableHead>
+                                        <TableHead className="text-right">Price</TableHead>
+                                        <TableHead className="text-right">Stock</TableHead>
+                                        <TableHead className="text-right">Value</TableHead>
+                                        <TableHead className="text-center">Status</TableHead>
+                                        <TableHead className="text-right">Actions</TableHead>
                                     </TableRow>
-                                ) : (
-                                    paginatedProducts.map((product) => {
-                                        const status = getStockStatus(product);
-                                        const stock = product.stockQuantity || 0;
-
-                                        return (
-                                            <TableRow key={product.id}>
-                                                <TableCell>
-                                                    <Checkbox
-                                                        checked={selectedProductIds.has(product.id)}
-                                                        onCheckedChange={() => toggleProductSelection(product.id)}
-                                                        aria-label={`Select ${product.name}`}
-                                                    />
-                                                </TableCell>
-                                                <TableCell>
-                                                    {isValidUrl(product.imageUrl) ? (
-                                                        <Image
-                                                            src={product.imageUrl!}
-                                                            alt={product.name}
-                                                            width={40}
-                                                            height={40}
-                                                            className="rounded-md object-cover aspect-square"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-10 h-10 bg-gray-100 rounded-md flex items-center justify-center text-gray-400">
-                                                            <ImagePlus className="w-5 h-5" />
-                                                        </div>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="font-medium">
-                                                    <div>{getProductName(product, language)}</div>
-                                                    {product.name_te && <div className="text-xs text-muted-foreground">{product.name}</div>}
-                                                </TableCell>
-                                                <TableCell>
-                                                    <Select
-                                                        defaultValue={product.category}
-                                                        onValueChange={(val) => {
-                                                            updateDoc(doc(firestore, 'products', product.id), { category: val });
-                                                            toast({ title: "Category Updated", description: `${product.name} moved to ${val}` });
-                                                        }}
-                                                    >
-                                                        <SelectTrigger className="w-[130px] h-8 border-none bg-transparent hover:bg-accent">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            {PRODUCT_CATEGORIES.map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-                                                        </SelectContent>
-                                                    </Select>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    ₹{product.pricePerUnit}/{product.unit}
-                                                </TableCell>
-                                                <TableCell className="text-right font-semibold">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <span className={stock === 0 ? 'text-destructive' : ''}>{stock}</span>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-center">
-                                                    {product.trackInventory ? (
-                                                        <Badge variant="outline" className={getStockStatusColor(status)}>
-                                                            {getStockStatusIcon(status)} {getStockStatusText(status)}
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="secondary">Untracked</Badge>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        {/* Quick Adjust Buttons */}
-                                                        {product.trackInventory && (
-                                                            <>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon"
-                                                                    className="h-8 w-8"
-                                                                    onClick={() => handleQuickAdjust(product, -1)}
-                                                                >
-                                                                    <Minus className="h-3 w-3" />
-                                                                </Button>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="icon"
-                                                                    className="h-8 w-8"
-                                                                    onClick={() => handleQuickAdjust(product, 1)}
-                                                                >
-                                                                    <Plus className="h-3 w-3" />
-                                                                </Button>
-                                                            </>
-                                                        )}
-
-                                                        {/* Edit Button */}
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8"
-                                                            onClick={() => handleEditProduct(product)}
-                                                        >
-                                                            <FilePen className="h-4 w-4" />
-                                                        </Button>
-
-                                                        {/* Delete Button */}
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 text-destructive"
-                                                            onClick={() => handleDeleteClick(product)}
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        );
-                                    })
-                                )}
-                            </TableBody>
-                        </Table>
+                                </TableHeader>
+                                <TableBody>
+                                    {filteredProducts.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                                                No products found
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        <SortableContext
+                                            items={paginatedProducts.map(p => p.id)}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            {paginatedProducts.map((product) => (
+                                                <SortableProductRow
+                                                    key={product.id}
+                                                    product={product}
+                                                    selectedProductIds={selectedProductIds}
+                                                    toggleProductSelection={toggleProductSelection}
+                                                    handleQuickAdjust={handleQuickAdjust}
+                                                    handleEditProduct={handleEditProduct}
+                                                    handleDeleteClick={handleDeleteClick}
+                                                    firestore={firestore}
+                                                    language={language}
+                                                    categories={categories || []}
+                                                />
+                                            ))}
+                                        </SortableContext>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </DndContext>
                     </div>
                     {/* Pagination Controls */}
-                    {totalPages > 1 && (
-                        <div className="flex items-center justify-end space-x-2 py-4">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                            >
-                                <ChevronLeft className="h-4 w-4" />
-                                Previous
-                            </Button>
-                            <div className="text-sm text-muted-foreground">
-                                Page {currentPage} of {totalPages}
+                    {
+                        totalPages > 1 && (
+                            <div className="flex items-center justify-end space-x-2 py-4">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                    Previous
+                                </Button>
+                                <div className="text-sm text-muted-foreground">
+                                    Page {currentPage} of {totalPages}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Next
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
                             </div>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                            >
-                                Next
-                                <ChevronRight className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    )}
+                        )
+                    }
                 </CardContent>
             </Card>
 
@@ -815,100 +1011,128 @@ export default function ProductsTab({ products, loading, onProductUpdate }: Prod
             </Dialog>
 
             {/* Sticky Bulk Action Bar */}
-            {selectedProductIds.size > 0 && (
-                <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center justify-between gap-4 z-50 animate-in slide-in-from-bottom-4 duration-200 min-w-[500px]">
-                    <div className="flex items-center gap-2 mr-4">
-                        <div className="bg-white text-black text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
-                            {selectedProductIds.size}
+            {
+                selectedProductIds.size > 0 && (
+                    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center justify-between gap-4 z-50 animate-in slide-in-from-bottom-4 duration-200 min-w-[500px]">
+                        <div className="flex items-center gap-2 mr-4">
+                            <div className="bg-white text-black text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+                                {selectedProductIds.size}
+                            </div>
+                            <span className="font-semibold text-sm whitespace-nowrap">Selected</span>
                         </div>
-                        <span className="font-semibold text-sm whitespace-nowrap">Selected</span>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                        {/* Bulk Status */}
-                        <Select onValueChange={(status) => {
-                            if (!firestore) return;
-                            if (confirm(`Set status of ${selectedProductIds.size} items to ${status}?`)) {
-                                const batch = writeBatch(firestore);
-                                selectedProductIds.forEach(id => {
-                                    batch.update(doc(firestore, 'products', id), {
-                                        stockQuantity: status === 'OUT_OF_STOCK' ? 0 : status === 'LOW_STOCK' ? 5 : 100 // Approximation
-                                    });
-                                });
-                                batch.commit().then(() => {
-                                    toast({ title: "Bulk Status Updated" });
-                                    setSelectedProductIds(new Set());
-                                });
-                            }
-                        }}>
-                            <SelectTrigger className="w-[110px] h-8 text-xs bg-gray-800 border-gray-700 text-white">
-                                <SelectValue placeholder="Set Status" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="IN_STOCK">In Stock</SelectItem>
-                                <SelectItem value="LOW_STOCK">Low Stock</SelectItem>
-                                <SelectItem value="OUT_OF_STOCK">Out of Stock</SelectItem>
-                            </SelectContent>
-                        </Select>
-
-                        {/* Bulk Category */}
-                        <Select onValueChange={(category) => {
-                            if (!firestore) return;
-                            if (confirm(`Move ${selectedProductIds.size} items to ${category}?`)) {
-                                const batch = writeBatch(firestore);
-                                selectedProductIds.forEach(id => {
-                                    batch.update(doc(firestore, 'products', id), { category });
-                                });
-                                batch.commit().then(() => {
-                                    toast({ title: "Bulk Category Moved" });
-                                    setSelectedProductIds(new Set());
-                                });
-                            }
-                        }}>
-                            <SelectTrigger className="w-[120px] h-8 text-xs bg-gray-800 border-gray-700 text-white">
-                                <SelectValue placeholder="Move to..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {PRODUCT_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-
-                        <div className="w-px h-6 bg-gray-700 mx-1" />
-
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            className="h-8 rounded-full text-xs font-bold"
-                            onClick={() => setSelectedProductIds(new Set())}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            className="h-8 rounded-full text-xs font-bold gap-1 bg-red-600 hover:bg-red-700"
-                            onClick={() => {
+                        <div className="flex items-center gap-2">
+                            {/* Bulk Status */}
+                            <Select onValueChange={(status) => {
                                 if (!firestore) return;
-                                if (confirm(`Are you sure you want to delete ${selectedProductIds.size} products?`)) {
+                                if (confirm(`Set status of ${selectedProductIds.size} items to ${status}?`)) {
                                     const batch = writeBatch(firestore);
                                     selectedProductIds.forEach(id => {
-                                        batch.delete(doc(firestore, 'products', id));
+                                        batch.update(doc(firestore, 'products', id), {
+                                            stockQuantity: status === 'OUT_OF_STOCK' ? 0 : status === 'LOW_STOCK' ? 5 : 100 // Approximation
+                                        });
                                     });
                                     batch.commit().then(() => {
-                                        toast({ title: "Bulk Delete Successful", description: `Deleted ${selectedProductIds.size} products.` });
+                                        toast({ title: "Bulk Status Updated" });
                                         setSelectedProductIds(new Set());
-                                    }).catch(err => {
-                                        toast({ variant: "destructive", title: "Bulk Delete Failed", description: err.message });
                                     });
                                 }
-                            }}
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                        </Button>
+                            }}>
+                                <SelectTrigger className="w-[110px] h-8 text-xs bg-gray-800 border-gray-700 text-white">
+                                    <SelectValue placeholder="Set Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="IN_STOCK">In Stock</SelectItem>
+                                    <SelectItem value="LOW_STOCK">Low Stock</SelectItem>
+                                    <SelectItem value="OUT_OF_STOCK">Out of Stock</SelectItem>
+                                </SelectContent>
+                            </Select>
+
+                            {/* Bulk Category */}
+                            <Select onValueChange={(category) => {
+                                if (!firestore) return;
+                                if (confirm(`Move ${selectedProductIds.size} items to ${category}?`)) {
+                                    const batch = writeBatch(firestore);
+                                    selectedProductIds.forEach(id => {
+                                        batch.update(doc(firestore, 'products', id), { category });
+                                    });
+                                    batch.commit().then(() => {
+                                        toast({ title: "Bulk Category Moved" });
+                                        setSelectedProductIds(new Set());
+                                    });
+                                }
+                            }}>
+                                <SelectTrigger className="w-[120px] h-8 text-xs bg-gray-800 border-gray-700 text-white">
+                                    <SelectValue placeholder="Move to..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {(categories && categories.length > 0 ? categories.map(c => c.name) : DEFAULT_CATEGORIES.filter(c => c.id !== 'All').map(c => c.label)).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 rounded-full text-xs font-bold gap-1 border-orange-200 text-orange-700 bg-orange-50 hover:bg-orange-100"
+                                onClick={() => {
+                                    if (!firestore) return;
+                                    if (confirm(`Enable Cut Service (₹10) for ${selectedProductIds.size} items?`)) {
+                                        const batch = writeBatch(firestore);
+                                        selectedProductIds.forEach(id => {
+                                            batch.update(doc(firestore, 'products', id), {
+                                                isCutVegetable: true,
+                                                cutCharge: 10
+                                            });
+                                        });
+                                        batch.commit().then(() => {
+                                            toast({ title: "Bulk Cut Service Enabled", description: "Set charge to ₹10 for selected items." });
+                                            setSelectedProductIds(new Set());
+                                        }).catch(err => {
+                                            toast({ variant: "destructive", title: "Update Failed", description: err.message });
+                                        });
+                                    }
+                                }}
+                            >
+                                <Scissors className="w-3.5 h-3.5" />
+                                Enable Cut
+                            </Button>
+
+                            <div className="w-px h-6 bg-gray-700 mx-1" />
+
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                className="h-8 rounded-full text-xs font-bold"
+                                onClick={() => setSelectedProductIds(new Set())}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                className="h-8 rounded-full text-xs font-bold gap-1 bg-red-600 hover:bg-red-700"
+                                onClick={() => {
+                                    if (!firestore) return;
+                                    if (confirm(`Are you sure you want to delete ${selectedProductIds.size} products?`)) {
+                                        const batch = writeBatch(firestore);
+                                        selectedProductIds.forEach(id => {
+                                            batch.delete(doc(firestore, 'products', id));
+                                        });
+                                        batch.commit().then(() => {
+                                            toast({ title: "Bulk Delete Successful", description: `Deleted ${selectedProductIds.size} products.` });
+                                            setSelectedProductIds(new Set());
+                                        }).catch(err => {
+                                            toast({ variant: "destructive", title: "Bulk Delete Failed", description: err.message });
+                                        });
+                                    }
+                                }}
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete
+                            </Button>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
         </div>
     );
 }

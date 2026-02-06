@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useCollection } from '@/firebase';
+import { Category } from '@/lib/types';
 import { Filter, Search, X } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
@@ -15,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ArrowUpDown } from 'lucide-react';
 
-export const CATEGORIES = [
+export const DEFAULT_CATEGORIES = [
     { id: 'All', label: 'All', icon: '🧺', color: 'bg-gray-100 text-gray-700' },
     { id: 'Vegetables', label: 'Vegetables', icon: '🥦', color: 'bg-green-100 text-green-700' },
     { id: 'Leafy Vegetables', label: 'Leafy Veg', icon: '🍃', color: 'bg-emerald-100 text-emerald-700' },
@@ -45,6 +47,25 @@ export default function CustomerHeader({
     isStoreOpen
 }: CustomerHeaderProps) {
     const [isFilterOpen, setFilterOpen] = useState(false);
+    const { data: dbCategories } = useCollection<Category>('categories', {
+        constraints: [['orderBy', 'displayOrder', 'asc']]
+    });
+
+    const displayCategories = useMemo(() => {
+        if (dbCategories && dbCategories.length > 0) {
+            const allCat = { id: 'All', label: 'All', icon: '🧺', color: 'bg-gray-100 text-gray-700' };
+            const mapped = dbCategories
+                .filter(c => c.isActive !== false)
+                .map(c => ({
+                    id: c.name,
+                    label: c.name,
+                    icon: c.icon,
+                    color: c.color
+                }));
+            return [allCat, ...mapped];
+        }
+        return DEFAULT_CATEGORIES;
+    }, [dbCategories]);
 
     return (
         <div className={`sticky ${!isStoreOpen ? 'top-12' : 'top-0'} z-30 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 transition-all pb-1`}>
@@ -113,7 +134,7 @@ export default function CustomerHeader({
                                 <div className="space-y-3">
                                     <h3 className="font-semibold text-gray-900">Categories</h3>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {CATEGORIES.map(cat => (
+                                        {displayCategories.map(cat => (
                                             <button
                                                 key={cat.id}
                                                 onClick={() => {
@@ -141,7 +162,7 @@ export default function CustomerHeader({
                 {/* Sticky Horizontal Categories (Hidden if searching, to reduce clutter) */}
                 {!searchQuery && (
                     <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-2 pt-1 sm:mx-0 sm:px-0 scroll-smooth">
-                        {CATEGORIES.map(cat => (
+                        {displayCategories.map(cat => (
                             <button
                                 key={cat.id}
                                 onClick={() => setActiveCategory(cat.id)}

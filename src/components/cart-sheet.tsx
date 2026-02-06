@@ -29,6 +29,7 @@ import dynamic from 'next/dynamic';
 
 import { Progress } from './ui/progress';
 import { Confetti } from './confetti';
+import { getDeductionAmount } from '@/lib/units';
 
 const AddressManager = dynamic(() => import('./address-manager'), { ssr: false });
 
@@ -193,16 +194,35 @@ export default function CartSheet({
             productUpdates.set(item.product.id, currentData);
           }
 
+
+
           if (item.selectedVariant) {
             const variants = currentData.variants || [];
             const vIndex = variants.findIndex((v: any) => v.id === item.selectedVariant?.id);
 
             if (vIndex === -1) throw new Error(`Variant ${item.selectedVariant.unit} for ${item.product.name} is no longer available.`);
 
-            if (variants[vIndex].stock < item.quantity) {
-              throw new Error(`Insufficient stock for ${item.product.name} (${item.selectedVariant.unit}). Available: ${variants[vIndex].stock}`);
+            if (currentData.manageStockBy === 'weight') {
+              // --- MASTER STOCK LOGIC ---
+              const deduction = getDeductionAmount(item.selectedVariant.unit, currentData.unit, item.quantity);
+              const currentMasterStock = currentData.stockQuantity || 0;
+              // If deduction is 0, it means units were incompatible or parsing failed. 
+              // For now, if deduction is 0, we might skip or throw? 
+              // Let's assume strictness: if we can't calculate deduction, it's an error.
+              if (deduction > 0 && currentMasterStock < deduction) {
+                throw new Error(`Insufficient Master Stock for ${item.product.name}. Needed: ${deduction} ${currentData.unit}, Available: ${currentMasterStock} ${currentData.unit}`);
+              }
+              // Only deduct if valid. 
+              if (deduction > 0) {
+                currentData.stockQuantity -= deduction;
+              }
+            } else {
+              // --- COUNT BASED LOGIC (Legacy) ---
+              if (variants[vIndex].stock < item.quantity) {
+                throw new Error(`Insufficient stock for ${item.product.name} (${item.selectedVariant.unit}). Available: ${variants[vIndex].stock}`);
+              }
+              variants[vIndex].stock -= item.quantity;
             }
-            variants[vIndex].stock -= item.quantity;
           } else {
             // Regular (base) product stock
             const currentStock = currentData.stockQuantity || 0;
@@ -280,7 +300,7 @@ export default function CartSheet({
           qty: item.quantity,
           priceAtOrder: item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit,
           isCut: item.isCut,
-          cutCharge: item.isCut ? (item.product.cutCharge || 0) : 0,
+          cutCharge: item.isCut ? (item.product.cutCharge !== undefined ? item.product.cutCharge : settings.defaultCutCharge) : 0,
           name: item.product.name,
           name_te: item.product.name_te,
           unit: item.selectedVariant ? item.selectedVariant.unit : item.product.unit,

@@ -78,7 +78,11 @@ export interface Product {
   keywords?: string[];
   isSeasonal?: boolean; // New: Flag for seasonal products
   isFeatured?: boolean; // New: Flag for featured/best-seller products
+  soldBy?: 'pcs' | 'kg'; // New: Simplified - how product is sold (replaces complex manageStockBy)
   manageStockBy?: 'count' | 'weight' | 'volume'; // New: Master Stock Logic
+  isMasterProduct?: boolean; // New: Indicates if this is a master product that can have variants
+  masterProductId?: string; // New: References the master product if this is a variant
+  variantGroupId?: string; // New: Groups related products/variants together
 }
 
 export interface Area {

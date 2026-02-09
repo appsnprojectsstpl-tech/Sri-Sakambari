@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Product } from '@/lib/types';
 import { productService, ProductFilters, ProductSort } from '@/lib/product-service';
 import { useCollection } from '@/firebase';
+import type { Constraint } from '@/firebase/firestore/utils';
 
 export interface UseProductsOptions {
   filters?: ProductFilters;
@@ -26,7 +27,7 @@ export interface UseProductsReturn {
  */
 export function useProducts(options: UseProductsOptions = {}): UseProductsReturn {
   const { filters: initialFilters = {}, sort: initialSort = { field: 'displayOrder', direction: 'asc' }, realtime = true, enabled = true } = options;
-  
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -37,10 +38,12 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
   const { data: firestoreProducts, loading: firestoreLoading } = useCollection<Product>(
     'products',
     {
-      constraints: [
-        ...(filters.category ? [['where', 'category', '==', filters.category] as const] : []),
-        ...(filters.isActive !== undefined ? [['where', 'isActive', '==', filters.isActive] as const] : []),
-      ],
+      constraints: (() => {
+        const c: Constraint[] = [];
+        if (filters.category) c.push(['where', 'category', '==', filters.category]);
+        if (filters.isActive !== undefined) c.push(['where', 'isActive', '==', filters.isActive]);
+        return c;
+      })(),
       disabled: !realtime || !enabled
     }
   );
@@ -50,30 +53,30 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
    */
   const fetchProducts = useCallback(async () => {
     if (!enabled) return;
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log('useProducts: Starting fetch with filters:', filters, 'sort:', sort);
-      
+
       let result: Product[];
-      
+
       if (realtime && firestoreProducts) {
         console.log('useProducts: Using real-time data, count:', firestoreProducts.length);
         // Use real-time data and apply client-side filtering/sorting
         result = [...firestoreProducts];
-        
+
         // Apply search filter
         if (filters.searchTerm) {
           const searchLower = filters.searchTerm.toLowerCase();
-          result = result.filter(product => 
+          result = result.filter(product =>
             product.name.toLowerCase().includes(searchLower) ||
             product.name_te?.toLowerCase().includes(searchLower) ||
             product.category.toLowerCase().includes(searchLower)
           );
         }
-        
+
         // Apply stock status filter
         if (filters.stockStatus) {
           result = result.filter(product => {
@@ -83,28 +86,28 @@ export function useProducts(options: UseProductsOptions = {}): UseProductsReturn
             return filters.stockStatus === 'IN_STOCK';
           });
         }
-        
+
         // Apply sorting
         result.sort((a, b) => {
-          let aValue = a[sort.field];
-          let bValue = b[sort.field];
-          
+          let aValue = (a as any)[sort.field];
+          let bValue = (b as any)[sort.field];
+
           if (aValue === undefined) aValue = '';
           if (bValue === undefined) bValue = '';
-          
+
           if (sort.direction === 'asc') {
             return aValue > bValue ? 1 : -1;
           } else {
             return aValue < bValue ? 1 : -1;
           }
         });
-        
+
         console.log('useProducts: After filtering/sorting, result count:', result.length);
       } else {
         // Use service-based fetching
         result = await productService.getProducts(filters, sort);
       }
-      
+
       setProducts(result);
       console.log('useProducts: Successfully fetched', result.length, 'products');
     } catch (err) {
@@ -179,7 +182,7 @@ export function useProduct(productId: string | null) {
 
   const updateProduct = useCallback(async (updates: Partial<Product>) => {
     if (!productId) return;
-    
+
     await productService.updateProduct(productId, updates);
     await fetchProduct();
   }, [productId, fetchProduct]);
@@ -209,7 +212,7 @@ export function useProductStock(options: { threshold?: number } = {}) {
         productService.getLowStockProducts(threshold),
         productService.getOutOfStockProducts()
       ]);
-      
+
       setLowStockProducts(lowStock);
       setOutOfStockProducts(outOfStock);
     } catch (error) {

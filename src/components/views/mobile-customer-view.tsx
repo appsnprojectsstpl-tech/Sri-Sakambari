@@ -1,24 +1,32 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Filter, Search, AlertTriangle } from 'lucide-react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import NotificationManager from '@/components/notification-manager';
-import InstallPrompt from '@/components/install-prompt';
-import { useStoreStatus } from '@/hooks/use-store-status';
-import { useLanguage } from '@/context/language-context';
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import MobileProductCard from "@/components/mobile-product-card";
-import { cn } from "@/lib/utils";
-import type { Product, CartItem, ProductVariant } from "@/lib/types";
-import { useCollection } from '@/firebase';
-import { useToast } from "@/hooks/use-toast";
+'use client';
 
+import { useState, useMemo, useCallback } from 'react';
+import { useLanguage } from '@/context/language-context';
+import { t } from '@/lib/translations';
+import { useCollection } from '@/firebase';
+import type { Product, CartItem, ProductVariant } from '@/lib/types';
+import MobileProductCard from '@/components/mobile-product-card';
+import ProductDetailsSheet from '@/components/product-details-sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Search, X, SlidersHorizontal, AlertTriangle, Filter } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from "@/hooks/use-toast";
+import { useStoreStatus } from '@/hooks/use-store-status';
+import { cn } from '@/lib/utils';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import InstallPrompt from '@/components/install-prompt';
+import NotificationManager from '@/components/notification-manager';
+
+// Hardcoded categories - IDs match database values
 const CATEGORIES = [
   { id: 'All', label: 'All', icon: '🧺', color: 'bg-gray-100 text-gray-700' },
   { id: 'Vegetables', label: 'Vegetables', icon: '🥦', color: 'bg-green-100 text-green-700' },
+  { id: 'Leafy Veg', label: 'Leafy Veg', icon: '🥬', color: 'bg-emerald-100 text-emerald-700' },
   { id: 'Fruits', label: 'Fruits', icon: '🍎', color: 'bg-red-100 text-red-700' },
   { id: 'Dairy', label: 'Dairy', icon: '🥛', color: 'bg-blue-100 text-blue-700' },
+  { id: 'Cool Drinks', label: 'Cool Drinks', icon: '🥤', color: 'bg-orange-100 text-orange-700' },
+  { id: 'Water', label: 'Water', icon: '💧', color: 'bg-cyan-100 text-cyan-700' },
 ];
 
 interface MobileCustomerViewProps {
@@ -33,18 +41,20 @@ const MobileProductGrid = ({
   cart,
   addToCart,
   updateCartQuantity,
+  onProductClick,
 }: {
   products: Product[] | null;
   loading: boolean;
   cart: CartItem[];
   addToCart: (product: Product, quantity: number, isCut: boolean, variant?: ProductVariant | null) => void;
   updateCartQuantity: (productId: string, isCut: boolean, newQuantity: number, variantId?: string) => void;
+  onProductClick: (product: Product) => void;
 }) => {
-  const [visibleCount, setVisibleCount] = useState(8);
+  const handleAddToCart = addToCart;
+  const handleUpdateCart = updateCartQuantity;
 
-  useEffect(() => {
-    setVisibleCount(8);
-  }, [products]);
+
+
 
   if (loading) {
     return (
@@ -78,13 +88,10 @@ const MobileProductGrid = ({
     );
   }
 
-  const visibleProducts = products.slice(0, visibleCount);
-  const hasMore = visibleProducts.length < products.length;
-
   return (
     <>
       <div className="grid grid-cols-2 gap-3 px-4 pb-6">
-        {visibleProducts.map((product) => {
+        {products.map((product) => {
           const productCartItems = cart.filter((item) => item.product.id === product.id);
           const legacyCartItem = productCartItems.find(i => !i.isCut);
 
@@ -92,28 +99,18 @@ const MobileProductGrid = ({
             <div key={product.id} className="flex flex-col" role="article">
               <MobileProductCard
                 product={product}
-                onAddToCart={addToCart}
-                onUpdateQuantity={updateCartQuantity}
+                onAddToCart={handleAddToCart}
+                onUpdateQuantity={handleUpdateCart}
                 cartItems={productCartItems}
                 cartQuantity={legacyCartItem?.quantity || 0}
+                onClick={() => onProductClick(product)}
               />
             </div>
           );
         })}
       </div>
 
-      {hasMore && (
-        <div className="flex justify-center pb-6">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setVisibleCount(prev => prev + 8)}
-            className="min-w-[120px] rounded-full shadow-sm text-sm"
-          >
-            Load More
-          </Button>
-        </div>
-      )}
+
     </>
   );
 };
@@ -128,6 +125,8 @@ export default function MobileCustomerView({
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isFilterOpen, setFilterOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isProductDetailOpen, setIsProductDetailOpen] = useState(false);
   const { toast } = useToast();
 
   const handleAddToCart = useCallback((product: Product, quantity: number, isCut: boolean, variant?: ProductVariant | null) => {
@@ -154,13 +153,46 @@ export default function MobileCustomerView({
     updateCartQuantity(productId, isCut, newQuantity, variantId);
   }, [isStoreOpen, storeStatusLoading, updateCartQuantity]);
 
-  const { data: allProducts, loading } = useCollection<Product>('products', {
-    constraints: [['where', 'isActive', '==', true]]
+  const { data: allProducts, loading, error } = useCollection<Product>('products', {
+    constraints: []
   });
+
+  // Debug logging
+  useEffect(() => {
+    console.log('MobileCustomerView: Products loading:', loading);
+    console.log('MobileCustomerView: Products data:', allProducts);
+    console.log('MobileCustomerView: Products error:', error);
+    console.log('MobileCustomerView: Products count:', allProducts?.length || 0);
+
+    // Category-specific debugging
+    if (allProducts && allProducts.length > 0) {
+      const categories = [...new Set(allProducts.map(p => p.category))];
+      console.log('MobileCustomerView: Available categories:', categories);
+
+      const leafyVegProducts = allProducts.filter(p => p.category === 'Leafy Veg');
+      const drinkingWaterProducts = allProducts.filter(p => p.category === 'Water');
+
+      console.log('MobileCustomerView: Leafy Veg products:', leafyVegProducts.length);
+      console.log('MobileCustomerView: Water products:', drinkingWaterProducts.length);
+
+      if (leafyVegProducts.length > 0) {
+        console.log('MobileCustomerView: Leafy Veg sample:', leafyVegProducts.slice(0, 2).map(p => ({ name: p.name, isActive: p.isActive })));
+      }
+      if (drinkingWaterProducts.length > 0) {
+        console.log('MobileCustomerView: Water sample:', drinkingWaterProducts.slice(0, 2).map(p => ({ name: p.name, isActive: p.isActive })));
+      }
+    }
+
+    console.log('MobileCustomerView: Active category:', activeCategory);
+  }, [allProducts, loading, error, activeCategory]);
 
   const filteredProducts = useMemo(() => {
     if (!allProducts) return [];
     let items = allProducts;
+
+    console.log('MobileCustomerView: Filtering started with', items.length, 'products');
+    console.log('MobileCustomerView: Active category for filtering:', activeCategory);
+    console.log('MobileCustomerView: Search query:', searchQuery);
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -168,21 +200,54 @@ export default function MobileCustomerView({
         p.name.toLowerCase().includes(q) ||
         (p.name_te && p.name_te.toLowerCase().includes(q))
       );
+      console.log('MobileCustomerView: After search filter:', items.length, 'products');
     } else {
       if (activeCategory && activeCategory !== 'All') {
-        items = items.filter((p: Product) => p.category === activeCategory);
+        console.log('MobileCustomerView: Applying category filter for:', activeCategory);
+        const beforeFilter = items.length;
+        items = items.filter((p: Product) => {
+          // Handle both main category and subcategory matching
+          let matches = false;
+
+          if (activeCategory === 'Leafy Veg') {
+            // For Leafy Veg, check both category and subcategory
+            matches = p.category === 'Leafy Veg' || (p.category === 'Vegetables' && p.subCategory === 'Leafy Veg');
+          } else if (activeCategory === 'Water') {
+            // For Water, check main category
+            matches = p.category === 'Water';
+          } else {
+            // For other categories, check main category
+            matches = p.category === activeCategory;
+          }
+
+          if (matches) {
+            console.log('MobileCustomerView: Product matched category filter:', p.name, 'category:', p.category, 'subCategory:', p.subCategory);
+          }
+          return matches;
+        });
+        console.log('MobileCustomerView: After category filter:', items.length, 'products (was', beforeFilter, ')');
+
+        // Show products that didn't match for debugging
+        const nonMatchingProducts = allProducts.filter((p: Product) => {
+          if (activeCategory === 'Leafy Veg') {
+            return !(p.category === 'Leafy Veg' || (p.category === 'Vegetables' && p.subCategory === 'Leafy Veg'));
+          } else if (activeCategory === 'Water') {
+            return p.category !== 'Water';
+          } else {
+            return p.category !== activeCategory;
+          }
+        });
+        if (nonMatchingProducts.length > 0 && items.length === 0) {
+          console.log('MobileCustomerView: Sample non-matching products:', nonMatchingProducts.slice(0, 3).map(p => ({ name: p.name, category: p.category, subCategory: p.subCategory, isActive: p.isActive })));
+        }
       }
     }
 
     items.sort((a: Product, b: Product) => (a.displayOrder || 0) - (b.displayOrder || 0));
 
+    console.log('MobileCustomerView: Final filtered products count:', items.length);
     return items;
   }, [allProducts, activeCategory, searchQuery]);
-
-  const seasonalPicks = useMemo(() => {
-    if (!allProducts) return [];
-    return allProducts.slice(0, 4);
-  }, [allProducts]);
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-20" data-testid="mobile-customer-view">
@@ -194,6 +259,13 @@ export default function MobileCustomerView({
       )}
       <InstallPrompt />
       <NotificationManager />
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded m-3">
+          <strong>Error loading products:</strong> {error.message || error}
+        </div>
+      )}
 
       {/* Sticky Header Group: Search + Categories */}
       <div className={`sticky ${!isStoreOpen ? 'top-10' : 'top-0'} z-30 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 transition-all pb-1`}>
@@ -278,33 +350,6 @@ export default function MobileCustomerView({
 
       <div className="px-3 py-4 space-y-6">
 
-        {/* Seasonal Picks */}
-        {!searchQuery && activeCategory === 'Vegetables' && (
-          <section>
-            <div className="flex items-center justify-between mb-3 px-1">
-              <h2 className="text-base font-bold text-gray-900">Seasonal Picks</h2>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-mandatory -mx-3 px-3">
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="min-w-[75vw] h-32 rounded-xl flex-shrink-0 snap-center" />
-                ))
-              ) : (
-                seasonalPicks.map((product: Product) => (
-                  <div key={product.id} className="min-w-[75vw] snap-center flex-shrink-0">
-                    <MobileProductCard
-                      product={product}
-                      onAddToCart={handleAddToCart}
-                      onUpdateQuantity={handleUpdateCart}
-                      cartItems={cart.filter(i => i.product.id === product.id)}
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        )}
-
         {/* Main Product Grid */}
         <section>
           <div className="flex items-center justify-between mb-3 px-1">
@@ -320,10 +365,29 @@ export default function MobileCustomerView({
             cart={cart}
             addToCart={handleAddToCart}
             updateCartQuantity={handleUpdateCart}
+            onProductClick={(product) => {
+              setSelectedProduct(product);
+              setIsProductDetailOpen(true);
+            }}
           />
         </section>
 
       </div>
+
+      {/* Product Details Sheet */}
+      {selectedProduct && (
+        <ProductDetailsSheet
+          isOpen={isProductDetailOpen}
+          onClose={() => {
+            setIsProductDetailOpen(false);
+            setSelectedProduct(null);
+          }}
+          product={selectedProduct}
+          cartItems={cart}
+          onAddToCart={handleAddToCart}
+          onUpdateQuantity={handleUpdateCart}
+        />
+      )}
     </div>
   );
 }

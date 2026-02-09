@@ -11,23 +11,18 @@ export function useCart(): UseCartReturn {
 
   const addToCart = async (product: Product): Promise<void> => {
     setCart(prevCart => {
-      const existingItem = prevCart.find(item => item.id === product.id);
+      const existingItem = prevCart.find(item => item.product.id === product.id);
       if (existingItem) {
-        return prevCart.map(item => 
-          item.id === product.id 
+        return prevCart.map(item =>
+          item.product.id === product.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
       } else {
         return [...prevCart, {
-          id: product.id,
-          name: product.name,
-          price: product.price,
+          product,
           quantity: 1,
-          image: product.imageUrl,
-          unit: product.unit || 'piece',
           isCut: false,
-          variants: []
         }];
       }
     });

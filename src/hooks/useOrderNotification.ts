@@ -53,40 +53,39 @@ export function useOrderNotification(userRole: string | undefined) {
 
 /**
  * Play notification sound using Web Audio API
+ * Plays a sequence of beeps for 3 seconds
  */
 function playNotificationSound() {
     try {
         // Create AudioContext
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+        if (!AudioContextClass) return;
 
-        // Create oscillator for a pleasant notification sound
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        const audioContext = new AudioContextClass();
+        const duration = 3000; // 3 seconds
+        const beepInterval = 400; // interval between beeps
+        const beepDuration = 150; // duration of each beep
 
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        const startTime = audioContext.currentTime;
 
-        // Configure sound: two-tone notification
-        oscillator.frequency.value = 800; // Higher pitch
-        gainNode.gain.value = 0.3; // Volume
+        for (let time = 0; time < duration; time += beepInterval) {
+            const playTime = startTime + (time / 1000);
 
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.1);
+            // Create oscillator for a pleasant notification sound
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
 
-        // Second tone
-        setTimeout(() => {
-            const oscillator2 = audioContext.createOscillator();
-            const gainNode2 = audioContext.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
 
-            oscillator2.connect(gainNode2);
-            gainNode2.connect(audioContext.destination);
+            // Alternate between two frequencies for a more noticeable pattern
+            oscillator.frequency.value = (time / beepInterval) % 2 === 0 ? 800 : 1000;
+            gainNode.gain.setValueAtTime(0.3, playTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, playTime + (beepDuration / 1000));
 
-            oscillator2.frequency.value = 1000; // Even higher pitch
-            gainNode2.gain.value = 0.3;
-
-            oscillator2.start(audioContext.currentTime);
-            oscillator2.stop(audioContext.currentTime + 0.15);
-        }, 150);
+            oscillator.start(playTime);
+            oscillator.stop(playTime + (beepDuration / 1000));
+        }
     } catch (error) {
         console.error('Error playing notification sound:', error);
     }

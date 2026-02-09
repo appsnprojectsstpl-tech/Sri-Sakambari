@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUser, useFirestore, useCollection } from '@/firebase';
 import { doc, serverTimestamp, runTransaction, collection, Timestamp, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import type { CartItem, Area, Order, Product } from '@/lib/types';
-import { Trash2, MessageSquare, Printer, Slice, Plus, Minus, ArrowLeft } from 'lucide-react';
+import { Trash2, MessageSquare, Printer, Slice, Plus, Minus, ArrowLeft, ShoppingCart } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { settings } from '@/lib/settings';
@@ -100,15 +100,15 @@ export default function CartPage() {
     }, [user]);
 
     // Cart Actions
-    const updateCartQuantity = (productId: string, isCut: boolean, quantity: number) => {
+    const updateCartQuantity = (productId: string, isCut: boolean, quantity: number, variantId?: string) => {
         setCart((prevCart) => {
             if (quantity <= 0) {
                 return prevCart.filter(
-                    (item) => !(item.product.id === productId && item.isCut === isCut)
+                    (item) => !(item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId)
                 );
             }
             return prevCart.map((item) =>
-                item.product.id === productId && item.isCut === isCut
+                item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId
                     ? { ...item, quantity }
                     : item
             );
@@ -123,7 +123,8 @@ export default function CartPage() {
     // Calculations
     const cartTotal = useMemo(() => {
         return cart.reduce((total, item) => {
-            const rawPrice = Number(item.product.pricePerUnit);
+            // Use variant price if available, otherwise use product base price
+            const rawPrice = Number(item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit);
             const price = isNaN(rawPrice) ? 0 : rawPrice;
             const rawQty = Number(item.quantity);
             const quantity = isNaN(rawQty) ? 0 : rawQty;
@@ -189,7 +190,9 @@ export default function CartPage() {
 
                 productSnapshots.forEach((snap, index) => {
                     if (!snap.exists()) throw new Error(`Product ${productReads[index].name} not found.`);
-                    const currentStock = snap.data().stockQuantity || 0;
+                    const data = snap.data();
+                    if (!data) throw new Error(`Product data not found for ${productReads[index].name}.`);
+                    const currentStock = data.stockQuantity || 0;
                     if (currentStock < productReads[index].qty) {
                         throw new Error(`Insufficient stock for ${productReads[index].name}.`);
                     }
@@ -198,7 +201,9 @@ export default function CartPage() {
                 transaction.set(counterRef, { lastId: nextId }, { merge: true });
 
                 productSnapshots.forEach((snap, index) => {
-                    const newStock = (snap.data().stockQuantity || 0) - productReads[index].qty;
+                    const data = snap.data();
+                    if (!data) throw new Error(`Product data not found for ${productReads[index].name}.`);
+                    const newStock = (data.stockQuantity || 0) - productReads[index].qty;
                     transaction.update(productReads[index].ref, { stockQuantity: newStock });
                 });
 
@@ -321,7 +326,7 @@ export default function CartPage() {
     ];
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col pb-20">
+        <div className="h-screen bg-gray-50 flex flex-col pb-20">
             {/* Simple Header for Cart Page */}
             <div className="sticky top-0 z-50 bg-white border-b shadow-sm px-4 h-16 flex items-center gap-4">
                 <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-10 w-10">
@@ -330,7 +335,7 @@ export default function CartPage() {
                 <h1 className="text-xl font-headline font-bold text-gray-900">{t('yourCart', language)}</h1>
             </div>
 
-            <div className="flex-1 container max-w-2xl mx-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto container max-w-2xl mx-auto p-4 space-y-4">
                 {/* Progress/Free Delivery Nudge */}
                 {cart.length > 0 && (
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-2">
@@ -370,7 +375,7 @@ export default function CartPage() {
                                         style={{ touchAction: 'pan-y' }}
                                         onDragEnd={(_, info) => {
                                             if (info.offset.x < -60) {
-                                                updateCartQuantity(item.product.id, item.isCut, 0);
+                                                updateCartQuantity(item.product.id, item.isCut, 0, item.selectedVariant?.id);
                                             }
                                         }}
                                         whileDrag={{ scale: 0.98 }}
@@ -386,11 +391,14 @@ export default function CartPage() {
 
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <h4 className="font-bold text-sm text-gray-900 line-clamp-1">{getProductName(item.product, language)}</h4>
+                                                <h4 className="font-bold text-sm text-gray-900 line-clamp-1">
+                                                    {getProductName(item.product, language)}
+                                                    {item.selectedVariant && <span className="text-muted-foreground font-normal ml-1">({item.selectedVariant.unit})</span>}
+                                                </h4>
                                                 {item.isCut && <Badge variant="outline" className="flex items-center gap-1 h-5 text-[10px] px-1 border-primary/30 text-primary bg-primary/5"><Slice className="h-3 w-3" />Cut</Badge>}
                                             </div>
                                             <p className="text-sm font-bold text-gray-900 mt-1">
-                                                ₹{item.product.pricePerUnit}
+                                                ₹{item.selectedVariant ? item.selectedVariant.price : item.product.pricePerUnit}
                                                 {item.isCut && <span className="text-muted-foreground font-normal text-xs ml-1">(+₹{item.product.cutCharge || settings.defaultCutCharge} cut)</span>}
                                             </p>
                                         </div>
@@ -400,7 +408,7 @@ export default function CartPage() {
                                                 variant="outline"
                                                 size="icon"
                                                 className="h-8 w-8 rounded-full border-primary/20 bg-primary/5 text-primary hover:bg-primary hover:text-white transition-colors"
-                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1))}
+                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, Math.max(0, item.quantity - 1), item.selectedVariant?.id)}
                                             >
                                                 <Minus className="h-4 w-4" strokeWidth={2.5} />
                                             </Button>
@@ -410,7 +418,7 @@ export default function CartPage() {
                                             <Button
                                                 size="icon"
                                                 className="h-8 w-8 rounded-full bg-primary text-white shadow-sm hover:bg-primary/90"
-                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1)}
+                                                onClick={() => updateCartQuantity(item.product.id, item.isCut, item.quantity + 1, item.selectedVariant?.id)}
                                             >
                                                 <Plus className="h-4 w-4" strokeWidth={2.5} />
                                             </Button>
@@ -422,13 +430,8 @@ export default function CartPage() {
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className="relative w-48 h-48 mb-6 opacity-80">
-                            <Image
-                                src="https://illustrations.popsy.co/amber/box.svg"
-                                alt="Empty Box"
-                                fill
-                                className="object-contain"
-                            />
+                        <div className="relative w-48 h-48 mb-6 opacity-80 flex items-center justify-center">
+                            <ShoppingCart className="w-32 h-32 text-muted-foreground" strokeWidth={1} />
                         </div>
                         <h3 className="text-2xl font-bold text-gray-800 mb-2">{t('cartEmpty', language)}</h3>
                         <p className="text-muted-foreground mb-8">{t('cartEmptyHint', language)}</p>
@@ -465,7 +468,7 @@ export default function CartPage() {
                             size="lg"
                             onClick={() => {
                                 const itemsList = cart.map(item =>
-                                    `- ${getProductName(item.product, language)} (${item.product.unit}) x ${item.quantity} ${item.isCut ? '(Cut)' : ''}`
+                                    `- ${getProductName(item.product, language)} ${item.selectedVariant ? `(${item.selectedVariant.unit})` : `(${item.product.unit})`} x ${item.quantity} ${item.isCut ? '(Cut)' : ''}`
                                 ).join('\n');
                                 const text = `Hello, I want to order:\n\n${itemsList}\n\nTotal approx: ₹${finalTotal.toFixed(2)}`;
                                 window.open(`https://wa.me/${settings.ownerPhone}?text=${encodeURIComponent(text)}`, '_blank');

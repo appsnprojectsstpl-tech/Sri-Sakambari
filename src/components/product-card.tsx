@@ -193,7 +193,7 @@ export default function ProductCard({
             </div>
 
             {/* Cut Option - Micro Button */}
-            {product.category === 'Vegetables' && product.isActive && (
+            {product.isCutVegetable && product.isActive && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();

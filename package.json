@@ -1,6 +1,6 @@
 {
   "name": "nextn",
-  "version": "1.0.42",
+  "version": "1.0.49",
   "private": true,
   "scripts": {
     "dev": "next dev -p 9002",
@@ -20,7 +20,9 @@
     "release:upload": "node scripts/upload-release.js",
     "release:complete": "node scripts/release-complete.js",
     "release:github": "node scripts/publish-github.js",
-    "release:auto": "node scripts/release-complete.js --auto"
+    "release:auto": "node scripts/release-complete.js --auto",
+    "backup": "node scripts/backup-firestore.js",
+    "restore": "node scripts/restore-firestore.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",

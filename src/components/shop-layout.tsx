@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { CheckCircle, AlertCircle } from 'lucide-react';
 import { useUser } from '@/firebase';
 import { useAuth } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { signOut } from 'firebase/auth';
-import type { Product, CartItem } from '@/lib/types';
+import type { Product, CartItem, ProductVariant } from '@/lib/types';
 import { FlyToCartProvider } from './fly-to-cart-context';
 import { BottomNav } from './bottom-nav';
 import { Toaster } from './ui/toaster';
@@ -22,6 +23,9 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/context/language-context';
 import { t } from '@/lib/translations';
 import ProductDetailsSheet from '@/components/product-details-sheet';
+import { useToast } from '@/hooks/use-toast';
+import { haptics, ImpactStyle } from '@/lib/haptics';
+import { getProductName } from '@/lib/translations';
 import { ArrowUp } from 'lucide-react';
 import { useUserNotifications } from '@/hooks/use-user-notifications';
 
@@ -80,38 +84,212 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
         }
     }, [cart]);
 
-    const addToCart = (product: Product, quantity: number = 1, isCut: boolean = false) => {
-        setCart((prevCart) => {
-            const existingItem = prevCart.find(
-                (item) => item.product.id === product.id && item.isCut === isCut
-            );
-            if (existingItem) {
-                return prevCart.map((item) =>
-                    item.product.id === product.id && item.isCut === isCut
-                        ? { ...item, quantity: item.quantity + quantity }
+    const { toast } = useToast();
+
+    const addToCart = (product: Product, quantity: number = 1, isCut: boolean = false, variant?: ProductVariant | null) => {
+        try {
+            // Validate inputs
+            if (!product || !product.id) {
+                toast({
+                    title: "Error",
+                    description: "Invalid product data",
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            if (quantity <= 0) {
+                toast({
+                    title: "Error",
+                    description: "Quantity must be greater than 0",
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            // Check if product is in stock
+            if (product.stockQuantity !== undefined && product.stockQuantity <= 0) {
+                toast({
+                    title: "Out of Stock",
+                    description: `${getProductName(product, language)} is currently out of stock`,
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            // Check if requested quantity exceeds available stock
+            if (product.stockQuantity !== undefined && quantity > product.stockQuantity) {
+                toast({
+                    title: "Insufficient Stock",
+                    description: `Only ${product.stockQuantity} ${getProductName(product, language)} available`,
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            setCart((prevCart) => {
+                const existingItem = prevCart.find(
+                    (item) => item.product.id === product.id && item.isCut === isCut
+                );
+
+                if (existingItem) {
+                    const newQuantity = existingItem.quantity + quantity;
+
+                    // Check if total quantity exceeds stock
+                    if (product.stockQuantity !== undefined && newQuantity > product.stockQuantity) {
+                        toast({
+                            title: "Insufficient Stock",
+                            description: `Cannot add more. Only ${product.stockQuantity} available in total.`,
+                            variant: "destructive",
+                            // icon removed
+                        });
+                        return prevCart;
+                    }
+
+                    toast({
+                        title: "Updated Cart",
+                        description: `${getProductName(product, language)} quantity updated to ${newQuantity}`,
+                        // icon removed
+                    });
+
+                    return prevCart.map((item) =>
+                        item.product.id === product.id && item.isCut === isCut
+                            ? { ...item, quantity: newQuantity }
+                            : item
+                    );
+                }
+
+                toast({
+                    title: "Added to Cart",
+                    description: `${getProductName(product, language)} added to cart`,
+                    // icon removed
+                });
+
+                return [...prevCart, { product, quantity, isCut }];
+            });
+
+            // Add haptic feedback
+            haptics.impact(ImpactStyle.Light);
+
+        } catch (error) {
+            logger.error('Error adding to cart:', error);
+            toast({
+                title: "Error",
+                description: "Failed to add item to cart. Please try again.",
+                variant: "destructive",
+                // icon removed
+            });
+        }
+    };
+
+    const updateCartQuantity = (productId: string, isCut: boolean, quantity: number, variantId?: string) => {
+        try {
+            // Validate inputs
+            if (!productId) {
+                toast({
+                    title: "Error",
+                    description: "Invalid product ID",
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            if (quantity < 0) {
+                toast({
+                    title: "Error",
+                    description: "Quantity cannot be negative",
+                    variant: "destructive",
+                    // icon removed
+                });
+                return;
+            }
+
+            setCart((prevCart) => {
+                if (quantity <= 0) {
+                    const itemToRemove = prevCart.find(
+                        (item) => item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId
+                    );
+
+                    if (itemToRemove) {
+                        toast({
+                            title: "Removed from Cart",
+                            description: `${getProductName(itemToRemove.product, language)} removed from cart`,
+                            // icon removed
+                        });
+                    }
+
+                    return prevCart.filter(
+                        (item) => !(item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId)
+                    );
+                }
+
+                // Check stock for the updated quantity
+                const itemToUpdate = prevCart.find(
+                    (item) => item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId
+                );
+
+                if (itemToUpdate && itemToUpdate.product.stockQuantity !== undefined && quantity > itemToUpdate.product.stockQuantity) {
+                    toast({
+                        title: "Insufficient Stock",
+                        description: `Only ${itemToUpdate.product.stockQuantity} ${getProductName(itemToUpdate.product, language)} available`,
+                        variant: "destructive",
+                        // icon removed
+                    });
+                    return prevCart;
+                }
+
+                const updatedCart = prevCart.map((item) =>
+                    item.product.id === productId && item.isCut === isCut && item.selectedVariant?.id === variantId
+                        ? { ...item, quantity }
                         : item
                 );
-            }
-            return [...prevCart, { product, quantity, isCut }];
-        });
+
+                toast({
+                    title: "Updated Cart",
+                    description: `Quantity updated to ${quantity}`,
+                    // icon removed
+                });
+
+                return updatedCart;
+            });
+
+            // Add haptic feedback
+            haptics.impact(ImpactStyle.Light);
+
+        } catch (error) {
+            logger.error('Error updating cart quantity:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update cart quantity. Please try again.",
+                variant: "destructive",
+                // icon removed
+            });
+        }
     };
 
-    const updateCartQuantity = (productId: string, isCut: boolean, quantity: number) => {
-        setCart((prevCart) => {
-            if (quantity <= 0) {
-                return prevCart.filter(
-                    (item) => !(item.product.id === productId && item.isCut === isCut)
-                );
-            }
-            return prevCart.map((item) =>
-                item.product.id === productId && item.isCut === isCut
-                    ? { ...item, quantity }
-                    : item
-            );
-        });
+    const clearCart = () => {
+        try {
+            setCart([]);
+            toast({
+                title: "Cart Cleared",
+                description: "All items removed from cart",
+            });
+            haptics.impact(ImpactStyle.Light);
+        } catch (error) {
+            logger.error('Error clearing cart:', error);
+            toast({
+                title: "Error",
+                description: "Failed to clear cart. Please try again.",
+                variant: "destructive",
+                // icon removed
+            });
+        }
     };
-
-    const clearCart = () => setCart([]);
 
     const handleLogout = async () => {
         if (auth) {
@@ -297,8 +475,7 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                 isOpen={!!selectedProduct}
                 onClose={() => setSelectedProduct(null)}
                 product={selectedProduct}
-                cartQuantity={selectedProduct ? (cart.find(i => i.product.id === selectedProduct.id && !i.isCut)?.quantity || 0) : 0}
-                cutCartQuantity={selectedProduct ? (cart.find(i => i.product.id === selectedProduct.id && i.isCut)?.quantity || 0) : 0}
+                cartItems={cart}
                 onAddToCart={addToCart}
                 onUpdateQuantity={updateCartQuantity}
             />
@@ -315,6 +492,9 @@ export default function ShopLayout({ title, categories, loading }: ShopLayoutPro
                     <ArrowUp className="h-6 w-6" />
                 </button>
             )}
+
+            {/* Toast Notifications */}
+            <Toaster />
         </div>
     );
 }

@@ -6,7 +6,7 @@ const generateId = (name: string): string => {
     return `prod_${name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}`;
 }
 
-const rawProducts: Omit<Product, 'id' | 'imageUrl' | 'imageHint' | 'displayOrder' | 'createdAt' | 'isCutVegetable' | 'cutCharge' | 'isActive' | 'subCategory'>[] = [
+const rawProducts: Omit<Product, 'id' | 'imageUrl' | 'imageHint' | 'displayOrder' | 'createdAt' | 'isCutVegetable' | 'cutCharge' | 'isActive' | 'subCategory' | 'stockQuantity' | 'trackInventory'>[] = [
     // Vegetables
     { name: 'Sweet Corn', name_te: 'స్వీట్ కార్న్', category: 'Vegetables', pricePerUnit: 25, unit: 'pcs' },
     { name: 'Baby Corn', name_te: 'బేబీ కార్న్', category: 'Vegetables', pricePerUnit: 20, unit: '200 grm' },
@@ -37,7 +37,7 @@ const rawProducts: Omit<Product, 'id' | 'imageUrl' | 'imageHint' | 'displayOrder
     { name: 'Ivy Gourd (Dondakaya)', name_te: 'దొండకాయ', category: 'Vegetables', pricePerUnit: 40, unit: 'kg' },
     { name: 'Chow Chow (Bangalore Vankaya)', name_te: 'చౌ చౌ (బెంగుళూరు వంకాయ)', category: 'Vegetables', pricePerUnit: 35, unit: 'kg' },
 
-    // Leafy Vegetables
+    // Leafy Veg
     { name: 'Spinach (Palak)', name_te: 'పాలకూర', category: 'Vegetables', pricePerUnit: 15, unit: 'bunch' },
     { name: 'Gongura', name_te: 'గోంగూర', category: 'Vegetables', pricePerUnit: 15, unit: 'bunch' },
     { name: 'Coriander Leaves', name_te: 'కొత్తిమీర', category: 'Vegetables', pricePerUnit: 10, unit: 'bunch' },
@@ -128,7 +128,7 @@ const productImages: Record<string, string> = {
 const assignSubCategory = (product: Omit<Product, 'id' | 'imageUrl' | 'imageHint' | 'displayOrder' | 'createdAt' | 'isCutVegetable' | 'cutCharge' | 'isActive' | 'subCategory'>): string => {
     const leafyVegetableNames = ['Spinach', 'Gongura', 'Coriander', 'Mint', 'Curry', 'Fenugreek', 'Sorrel'];
     if (product.category === 'Vegetables' && leafyVegetableNames.some(lv => product.name.includes(lv))) {
-        return 'Leafy Vegetables';
+        return 'Leafy Veg';
     }
     if (product.category === 'Fruits') {
         const commonFruits = ['Banana', 'Apple', 'Orange', 'Grapes', 'Pomegranate', 'Sweet Lime'];
@@ -142,7 +142,7 @@ const assignSubCategory = (product: Omit<Product, 'id' | 'imageUrl' | 'imageHint
 }
 
 
-export const products: Product[] = rawProducts.map((p, index) => {
+export const products: Product[] = (rawProducts as any[]).map((p, index) => {
     const cleanedName = p.name.replace(/\s*\(.*?\)\s*/g, '').trim();
     return {
         ...p,
@@ -155,6 +155,7 @@ export const products: Product[] = rawProducts.map((p, index) => {
         isCutVegetable: false,
         cutCharge: 10,
         stockQuantity: 0,
+        trackInventory: true,
         createdAt: new Date(), // This will be replaced by serverTimestamp() during seeding
     };
 });

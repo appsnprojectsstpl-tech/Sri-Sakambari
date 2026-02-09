@@ -8,12 +8,14 @@ import {
 } from '@/components/ui/sheet';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
-import { Plus, Minus, Share2 } from 'lucide-react';
+import { Plus, Minus, Share2, AlertCircle } from 'lucide-react';
 import { getProductName } from '@/lib/translations';
 import { useLanguage } from '@/context/language-context';
-import type { Product } from '@/lib/types';
+import type { Product, ProductVariant, CartItem } from '@/lib/types';
 import { haptics, ImpactStyle } from '@/lib/haptics';
-import { useState, useMemo } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { logger } from '@/lib/logger';
+import { useState, useMemo, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -21,49 +23,151 @@ interface ProductDetailsSheetProps {
     isOpen: boolean;
     onClose: () => void;
     product: Product | null;
-    cartQuantity: number;
-    cutCartQuantity: number;
-    onAddToCart: (product: Product, quantity: number, isCut: boolean) => void;
-    onUpdateQuantity: (productId: string, isCut: boolean, newQuantity: number) => void;
+    cartItems?: CartItem[];
+    onAddToCart: (product: Product, quantity: number, isCut: boolean, variant?: ProductVariant | null) => void;
+    onUpdateQuantity: (productId: string, isCut: boolean, newQuantity: number, variantId?: string) => void;
 }
 
 export default function ProductDetailsSheet({
     isOpen,
     onClose,
     product,
-    cartQuantity,
-    cutCartQuantity,
+    cartItems = [],
     onAddToCart,
     onUpdateQuantity
 }: ProductDetailsSheetProps) {
     const { language } = useLanguage();
     const [isCutSelected, setIsCutSelected] = useState(false);
+    const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
 
     if (!product) return null;
 
-    const discountValues = [15, 20, 25, 40];
-    const discount = discountValues[product.id.charCodeAt(0) % discountValues.length];
-    const originalPrice = Math.round(product.pricePerUnit * (100 / (100 - discount)));
+    const variants = product.variants || [];
+    const hasVariants = variants.length > 0;
 
-    // Active quantity based on selection (Regular vs Cut)
-    // Actually, Zepto details often show one main add button, or variants.
-    // We will show a toggle or simply default to Regular, with Cut as an option if available.
+    // Initialize selected variant
+    useEffect(() => {
+        if (hasVariants && !selectedVariantId) {
+            setSelectedVariantId(variants[0].id);
+        }
+    }, [hasVariants, variants, selectedVariantId, product.id]);
 
-    const currentQuantity = isCutSelected ? cutCartQuantity : cartQuantity;
+    // Reset variant selection when product changes
+    useEffect(() => {
+        setSelectedVariantId(null);
+        setIsCutSelected(false);
+    }, [product.id]);
+
+    const selectedVariant = useMemo(() =>
+        hasVariants ? variants.find(v => v.id === selectedVariantId) || variants[0] : null
+        , [variants, selectedVariantId]);
+
+    const price = selectedVariant ? selectedVariant.price : product.pricePerUnit;
+    const unit = selectedVariant ? selectedVariant.unit : product.unit;
+
+    // Memoize discount calculation to prevent recalculation on every render
+    const { discount, originalPrice } = useMemo(() => {
+        const discountValues = [15, 20, 25, 40];
+        const discount = discountValues[product.id.charCodeAt(0) % discountValues.length];
+        const originalPrice = Math.round(price * (100 / (100 - discount)));
+        return { discount, originalPrice };
+    }, [product.id, price]);
+
+    // Calculate quantity for the selected variant and cut option
+    const currentQuantity = useMemo(() => {
+        const productCartItems = cartItems.filter(i => i.product.id === product.id);
+
+        if (hasVariants && selectedVariant) {
+            // For products with variants, find items matching the selected variant
+            return productCartItems
+                .filter(i => i.selectedVariant?.id === selectedVariant.id && i.isCut === isCutSelected)
+                .reduce((sum, i) => sum + i.quantity, 0);
+        } else {
+            // For products without variants
+            return productCartItems
+                .filter(i => !i.selectedVariant && i.isCut === isCutSelected)
+                .reduce((sum, i) => sum + i.quantity, 0);
+        }
+    }, [cartItems, product.id, selectedVariant?.id, isCutSelected]);
 
     const handleAdd = () => {
-        haptics.impact(ImpactStyle.Medium);
-        if (currentQuantity === 0) {
-            onAddToCart(product, 1, isCutSelected);
-        } else {
-            onUpdateQuantity(product.id, isCutSelected, currentQuantity + 1);
+        try {
+            // Validate variant selection for products with variants
+            if (hasVariants && !selectedVariant) {
+                toast({
+                    title: "Please Select Variant",
+                    description: "Please choose a variant before adding to cart",
+                    variant: "destructive",
+                    icon: <AlertCircle className="h-4 w-4" />
+                });
+                haptics.impact(ImpactStyle.Heavy);
+                return;
+            }
+
+            // Validate stock availability
+            if (product.stock !== undefined && product.stock <= 0) {
+                toast({
+                    title: "Out of Stock",
+                    description: `${product.name} is currently out of stock`,
+                    variant: "destructive",
+                    icon: <AlertCircle className="h-4 w-4" />
+                });
+                haptics.impact(ImpactStyle.Heavy);
+                return;
+            }
+
+            // Check if adding one more would exceed stock
+            if (product.stock !== undefined && currentQuantity + 1 > product.stock) {
+                toast({
+                    title: "Insufficient Stock",
+                    description: `Only ${product.stock - currentQuantity} more available`,
+                    variant: "destructive",
+                    icon: <AlertCircle className="h-4 w-4" />
+                });
+                haptics.impact(ImpactStyle.Heavy);
+                return;
+            }
+
+            haptics.impact(ImpactStyle.Medium);
+            if (currentQuantity === 0) {
+                onAddToCart(product, 1, isCutSelected, selectedVariant);
+            } else {
+                onUpdateQuantity(product.id, isCutSelected, currentQuantity + 1, selectedVariant?.id);
+            }
+        } catch (error) {
+            logger.error('Error in handleAdd:', error);
+            toast({
+                title: "Error",
+                description: "Failed to add item to cart. Please try again.",
+                variant: "destructive",
+                icon: <AlertCircle className="h-4 w-4" />
+            });
         }
     };
 
     const handleRemove = () => {
-        haptics.impact(ImpactStyle.Light);
-        if (currentQuantity > 0) {
-            onUpdateQuantity(product.id, isCutSelected, currentQuantity - 1);
+        try {
+            if (currentQuantity <= 0) {
+                toast({
+                    title: "Cart Empty",
+                    description: "No items to remove",
+                    variant: "destructive",
+                    icon: <AlertCircle className="h-4 w-4" />
+                });
+                haptics.impact(ImpactStyle.Heavy);
+                return;
+            }
+
+            haptics.impact(ImpactStyle.Light);
+            onUpdateQuantity(product.id, isCutSelected, currentQuantity - 1, selectedVariant?.id);
+        } catch (error) {
+            logger.error('Error in handleRemove:', error);
+            toast({
+                title: "Error",
+                description: "Failed to remove item from cart. Please try again.",
+                variant: "destructive",
+                icon: <AlertCircle className="h-4 w-4" />
+            });
         }
     };
 
@@ -117,9 +221,28 @@ export default function ProductDetailsSheet({
                             {getProductName(product, language)}
                         </h2>
                         <div className="flex items-center gap-2">
-                            <Badge variant="secondary" className="text-xs font-medium">
-                                {product.unit}
-                            </Badge>
+                            {hasVariants ? (
+                                <div className="flex gap-2 flex-wrap">
+                                    {variants.map((variant) => (
+                                        <button
+                                            key={variant.id}
+                                            onClick={() => setSelectedVariantId(variant.id)}
+                                            className={cn(
+                                                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all",
+                                                selectedVariantId === variant.id
+                                                    ? "bg-primary text-primary-foreground shadow-md"
+                                                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            )}
+                                        >
+                                            {variant.unit} - ₹{variant.price}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <Badge variant="secondary" className="text-xs font-medium">
+                                    {unit}
+                                </Badge>
+                            )}
                             <Badge variant="outline" className="text-xs font-medium text-primary border-primary/20 bg-primary/5">
                                 In Stock
                             </Badge>
@@ -129,10 +252,10 @@ export default function ProductDetailsSheet({
                     {/* Price Section - Enhanced */}
                     <div className="bg-primary/5 border border-primary/10 rounded-2xl p-4">
                         <div className="flex items-baseline gap-3">
-                            <span className="text-3xl font-black text-primary">₹{product.pricePerUnit}</span>
+                            <span className="text-3xl font-black text-primary">₹{price}</span>
                             <span className="text-lg text-muted-foreground line-through">₹{originalPrice}</span>
                             <span className="text-sm font-bold text-primary-foreground bg-primary px-2 py-1 rounded-full">
-                                Save ₹{originalPrice - product.pricePerUnit}
+                                Save ₹{originalPrice - price}
                             </span>
                         </div>
                     </div>
@@ -146,7 +269,7 @@ export default function ProductDetailsSheet({
                                         <span className="text-lg">✂️</span>
                                         <span className="text-base font-bold text-orange-900">Cut & Cleaned</span>
                                     </div>
-                                    <span className="text-xs text-orange-700">Pre-washed & diced • +₹{product.cutCharge}</span>
+                                    <span className="text-xs text-orange-700">Pre-washed & diced • +₹{product.cutCharge || 10}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={cn("text-xs font-bold transition-colors", !isCutSelected ? "text-foreground" : "text-muted-foreground")}>NO</span>
@@ -176,7 +299,7 @@ export default function ProductDetailsSheet({
                                 Product Details
                             </h3>
                             <p className="text-sm text-muted-foreground leading-relaxed bg-muted/30 p-4 rounded-xl border border-border/50">
-                                {product.description || `Fresh and high-quality ${getProductName(product, language)} sourced directly from local farms. We ensure the best quality and freshness for your daily needs.`}
+                                {product.description ? product.description : `Fresh and high-quality ${getProductName(product, language)} sourced directly from local farms. We ensure the best quality and freshness for your daily needs.`}
                             </p>
                         </div>
 

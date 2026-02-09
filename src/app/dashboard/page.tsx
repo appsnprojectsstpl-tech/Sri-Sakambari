@@ -100,14 +100,18 @@ export default function DashboardPage() {
       const existingItem = prevCart.find(
         (item) => item.product.id === product.id && item.isCut === isCut && item.selectedVariant?.id === variant?.id
       );
+
       if (existingItem) {
-        return prevCart.map((item) =>
+        const updated = prevCart.map((item) =>
           item.product.id === product.id && item.isCut === isCut && item.selectedVariant?.id === variant?.id
             ? { ...item, quantity: item.quantity + quantity }
             : item
         );
+        return updated;
       }
-      return [...prevCart, { product, quantity, isCut, selectedVariant: variant }];
+
+      const newItem = { product, quantity, isCut, selectedVariant: variant };
+      return [...prevCart, newItem];
     });
   };
 

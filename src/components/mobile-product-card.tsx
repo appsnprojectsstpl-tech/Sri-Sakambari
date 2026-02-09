@@ -33,15 +33,19 @@ export default function MobileProductCard({
   const variants = product.variants || [];
   const hasVariants = variants.length > 0;
 
-  // State for selected variant
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  // State for selected variant - initialize with first variant to avoid race condition
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    hasVariants ? variants[0].id : null
+  );
 
-  // Initialize selected variant
+  // Update selected variant if product changes
   useEffect(() => {
-    if (hasVariants && !selectedVariantId) {
+    if (hasVariants) {
       setSelectedVariantId(variants[0].id);
+    } else {
+      setSelectedVariantId(null);
     }
-  }, [hasVariants, variants, selectedVariantId]);
+  }, [product.id, hasVariants]);
 
   const selectedVariant = useMemo(() =>
     hasVariants ? variants.find(v => v.id === selectedVariantId) || variants[0] : null
@@ -186,7 +190,7 @@ export default function MobileProductCard({
             </div>
 
             {/* Cut Option - Micro Button for Mobile */}
-            {product.category === 'Vegetables' && product.isActive && (
+            {product.isCutVegetable && product.isActive && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -198,7 +202,7 @@ export default function MobileProductCard({
                 className="mt-0.5 flex items-center gap-0.5 text-[9px] font-bold text-primary bg-primary/10 px-1 py-0.5 rounded-full w-fit active:bg-primary/20 mobile-touch-button"
               >
                 <Plus className="w-2 h-2" />
-                Cut (+₹10)
+                Cut (+₹{product.cutCharge || 10})
               </button>
             )}
           </div>

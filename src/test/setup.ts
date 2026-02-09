@@ -4,7 +4,8 @@
  */
 
 import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import { vi, beforeEach, afterEach } from 'vitest';
+import React from 'react';
 
 // Mock Firebase
 vi.mock('@/firebase', () => ({

@@ -43,6 +43,7 @@ body {
     /* Rounded-lg for cleaner look */
   }
 
+  /* Dark mode disabled 
   .dark {
     --background: 142 50% 5%;
     --foreground: 142 10% 90%;
@@ -72,6 +73,7 @@ body {
     --input: 142 30% 18%;
     --ring: 142 71% 45%;
   }
+  */
 }
 
 @layer base {

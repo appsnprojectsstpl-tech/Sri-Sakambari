@@ -21,15 +21,15 @@ export const PRODUCT_KEYWORDS: Record<string, { category: string; unit: string }
     'radish': { category: 'Vegetables', unit: 'Kg' },
     'pumpkin': { category: 'Vegetables', unit: 'Kg' },
 
-    // Leafy Vegetables
-    'spinach': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'palak': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'coriander': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'curry leaves': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'mint': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'methi': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'amaranth': { category: 'Leafy Vegetables', unit: 'Pcs' },
-    'gongura': { category: 'Leafy Vegetables', unit: 'Pcs' },
+    // Leafy Veg
+    'spinach': { category: 'Leafy Veg', unit: 'Pcs' },
+    'palak': { category: 'Leafy Veg', unit: 'Pcs' },
+    'coriander': { category: 'Leafy Veg', unit: 'Pcs' },
+    'curry leaves': { category: 'Leafy Veg', unit: 'Pcs' },
+    'mint': { category: 'Leafy Veg', unit: 'Pcs' },
+    'methi': { category: 'Leafy Veg', unit: 'Pcs' },
+    'amaranth': { category: 'Leafy Veg', unit: 'Pcs' },
+    'gongura': { category: 'Leafy Veg', unit: 'Pcs' },
 
     // Fruits
     'apple': { category: 'Fruits', unit: 'Kg' },
@@ -58,10 +58,10 @@ export const PRODUCT_KEYWORDS: Record<string, { category: string; unit: string }
     'fanta': { category: 'Cool Drinks', unit: 'Pcs' },
     'maaza': { category: 'Cool Drinks', unit: 'Pcs' },
 
-    // Drinking Water
-    'water': { category: 'Drinking Water', unit: 'Pcs' },
-    'bisleri': { category: 'Drinking Water', unit: 'Pcs' },
-    'kinley': { category: 'Drinking Water', unit: 'Pcs' },
+    // Water
+    'water': { category: 'Water', unit: 'Pcs' },
+    'bisleri': { category: 'Water', unit: 'Pcs' },
+    'kinley': { category: 'Water', unit: 'Pcs' },
 
     // Meat & Eggs
     'chicken': { category: 'Meat', unit: 'Kg' },

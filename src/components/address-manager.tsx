@@ -50,34 +50,34 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
     const validateAddress = (address: Partial<Address>): { isValid: boolean; errors: string[] } => {
         const errors: string[] = [];
-        
+
         if (!address.label || address.label.trim().length < 2) {
             errors.push("Address label must be at least 2 characters long");
         }
-        
+
         if (!address.line1 || address.line1.trim().length < 5) {
             errors.push("Address line 1 must be at least 5 characters long");
         }
-        
+
         if (address.line2 && address.line2.trim().length > 100) {
             errors.push("Address line 2 must not exceed 100 characters");
         }
-        
+
         if (!address.area || address.area.trim().length < 2) {
             errors.push("Area must be at least 2 characters long");
         }
-        
+
         if (address.pincode) {
             const pincodeRegex = /^\d{6}$/;
             if (!pincodeRegex.test(address.pincode)) {
                 errors.push("Pincode must be a valid 6-digit number");
             }
         }
-        
+
         if (address.landmark && address.landmark.trim().length > 100) {
             errors.push("Landmark must not exceed 100 characters");
         }
-        
+
         return {
             isValid: errors.length === 0,
             errors
@@ -86,13 +86,13 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
     const handleAddAddress = async () => {
         if (!user || !firestore) return;
-        
+
         const validation = validateAddress(newAddress);
         if (!validation.isValid) {
-            toast({ 
-                title: "Validation Error", 
-                description: validation.errors.join(". "), 
-                variant: "destructive" 
+            toast({
+                title: "Validation Error",
+                description: validation.errors.join(". "),
+                variant: "destructive"
             });
             return;
         }
@@ -101,10 +101,10 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
         const addressToAdd: Address = {
             id: uuidv4(),
-            label: newAddress.label,
-            line1: newAddress.line1,
+            label: newAddress.label || '',
+            line1: newAddress.line1 || '',
             line2: newAddress.line2 || "",
-            area: newAddress.area,
+            area: newAddress.area || '',
             pincode: newAddress.pincode || "",
             landmark: newAddress.landmark || "",
             isDefault: addresses.length === 0 || newAddress.isDefault, // First address is default
@@ -137,22 +137,22 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
 
     const handleDelete = async (id: string) => {
         if (!user || !firestore) return;
-        
+
         const addressToDelete = addresses.find(a => a.id === id);
         if (!addressToDelete) return;
-        
+
         const confirmed = window.confirm(`Are you sure you want to delete the address "${addressToDelete.label}"? This action cannot be undone.`);
         if (!confirmed) return;
-        
+
         haptics.impact(ImpactStyle.Medium);
-        
+
         try {
             const updatedAddresses = addresses.filter(a => a.id !== id);
             await updateDoc(doc(firestore, "users", user.id), { addresses: updatedAddresses });
             toast({ title: "Address Deleted", description: `"${addressToDelete.label}" has been deleted successfully` });
         } catch (error) {
             console.error('Error deleting address:', error);
-            
+
             let errorMessage = 'Failed to delete address';
             if (error instanceof Error) {
                 if (error.message.includes('permission-denied')) {
@@ -163,11 +163,11 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
                     errorMessage = error.message;
                 }
             }
-            
-            toast({ 
-                title: "Error", 
-                description: errorMessage, 
-                variant: "destructive" 
+
+            toast({
+                title: "Error",
+                description: errorMessage,
+                variant: "destructive"
             });
         }
     };
@@ -190,7 +190,7 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
             toast({ title: "Default Address Set", description: `"${target.label}" is now your default address` });
         } catch (error) {
             console.error('Error setting default address:', error);
-            
+
             let errorMessage = 'Failed to set default address';
             if (error instanceof Error) {
                 if (error.message.includes('permission-denied')) {
@@ -201,11 +201,11 @@ export default function AddressManager({ onSelect, selectedId, enableSelection =
                     errorMessage = error.message;
                 }
             }
-            
-            toast({ 
-                title: "Error", 
-                description: errorMessage, 
-                variant: "destructive" 
+
+            toast({
+                title: "Error",
+                description: errorMessage,
+                variant: "destructive"
             });
         }
     };

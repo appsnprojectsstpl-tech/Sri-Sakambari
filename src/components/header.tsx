@@ -1,8 +1,8 @@
 'use client';
 
 import { Logo } from '@/components/icons';
-import { ShoppingCart, LogOut, LogIn, User as UserIcon, Bell, Languages, History, Home, Sun, Moon } from 'lucide-react';
-import { useTheme } from 'next-themes';
+import { ShoppingCart, LogOut, LogIn, User as UserIcon, Bell, Languages, History, Home } from 'lucide-react';
+
 import type { User, Notification } from '@/lib/types';
 import { Button } from './ui/button';
 import Link from 'next/link';
@@ -32,7 +32,6 @@ interface HeaderProps {
 export default function Header({ user, onLogout, cartCount, notifications, onCartClick }: HeaderProps) {
   const { language, setLanguage } = useLanguage();
   const { toast } = useToast();
-  const { theme, setTheme } = useTheme();
   const unreadNotifications = notifications.filter(n => !n.isRead);
   const isCustomer = !user || user.role === 'customer';
   const { messaging, firestore } = initializeFirebase();
@@ -40,7 +39,7 @@ export default function Header({ user, onLogout, cartCount, notifications, onCar
   const markAsRead = async (id: string) => {
     if (!user) return;
     try {
-      const notificationRef = doc(firestore, 'users', user.id, 'notifications', id);
+      const notificationRef = doc(firestore, 'notifications', id);
       await updateDoc(notificationRef, { isRead: true });
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -53,7 +52,7 @@ export default function Header({ user, onLogout, cartCount, notifications, onCar
       const batch = writeBatch(firestore);
       notifications.forEach(n => {
         if (!n.isRead) {
-          const ref = doc(firestore, 'users', user.id, 'notifications', n.id);
+          const ref = doc(firestore, 'notifications', n.id);
           batch.update(ref, { isRead: true });
         }
       });
@@ -112,15 +111,6 @@ export default function Header({ user, onLogout, cartCount, notifications, onCar
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Theme Switcher */}
-          <Button variant="ghost" size="icon" className="h-11 w-11 hover:bg-muted/50" onClick={() => {
-            haptics.impact(ImpactStyle.Medium);
-            setTheme(theme === 'dark' ? 'light' : 'dark');
-          }}>
-            <Sun className="h-6 w-6 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-            <Moon className="absolute h-6 w-6 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-            <span className="sr-only">Toggle theme</span>
-          </Button>
 
           {/* Notifications */}
           {user && (

@@ -20,11 +20,11 @@ import { ArrowUpDown } from 'lucide-react';
 export const DEFAULT_CATEGORIES = [
     { id: 'All', label: 'All', icon: '🧺', color: 'bg-gray-100 text-gray-700' },
     { id: 'Vegetables', label: 'Vegetables', icon: '🥦', color: 'bg-green-100 text-green-700' },
-    { id: 'Leafy Vegetables', label: 'Leafy Veg', icon: '🍃', color: 'bg-emerald-100 text-emerald-700' },
+    { id: 'Leafy Veg', label: 'Leafy Veg', icon: '🍃', color: 'bg-emerald-100 text-emerald-700' },
     { id: 'Fruits', label: 'Fruits', icon: '🍎', color: 'bg-red-100 text-red-700' },
     { id: 'Dairy', label: 'Dairy', icon: '🥛', color: 'bg-blue-100 text-blue-700' },
     { id: 'Cool Drinks', label: 'Cool Drinks', icon: '🥤', color: 'bg-cyan-100 text-cyan-700' },
-    { id: 'Drinking Water', label: 'Water', icon: '💧', color: 'bg-sky-100 text-sky-700' },
+    { id: 'Water', label: 'Water', icon: '💧', color: 'bg-sky-100 text-sky-700' },
 ];
 
 interface CustomerHeaderProps {

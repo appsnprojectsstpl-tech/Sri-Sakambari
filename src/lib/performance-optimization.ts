@@ -3,7 +3,7 @@
  * Provides lazy loading, image optimization, caching, and bundle optimization
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 
 /**
@@ -81,7 +81,7 @@ export const imageOptimization = {
   getOptimalImageSize: (containerWidth: number, devicePixelRatio = 1): number => {
     const sizes = [320, 480, 640, 768, 1024, 1280, 1440, 1920];
     const targetSize = containerWidth * devicePixelRatio;
-    
+
     return sizes.find(size => size >= targetSize) || sizes[sizes.length - 1];
   }
 };
@@ -252,7 +252,7 @@ export const caching = {
               setData(cacheRef.current.data);
               setLoading(false);
             }
-            
+
             // Revalidate in background
             fetchData(false);
             return;
@@ -260,7 +260,7 @@ export const caching = {
 
           const response = await fetch(url, options);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          
+
           const result = await response.json();
           cacheRef.current = { data: result, timestamp: now };
 
@@ -282,7 +282,7 @@ export const caching = {
       return () => { mounted = false; };
     }, [url]);
 
-    return { data, loading, error, refetch: () => fetchData(false) };
+    return { data, loading, error, refetch: () => { } };
   }
 };
 
@@ -298,7 +298,7 @@ export const bundleOptimization = {
       loading: () => React.createElement('div', { className: 'flex items-center justify-center h-64' }, 'Loading Admin...'),
       ssr: false
     }),
-    
+
     DeliveryView: dynamic(() => import('@/components/views/delivery-view'), {
       loading: () => React.createElement('div', { className: 'flex items-center justify-center h-64' }, 'Loading Delivery...'),
       ssr: false
@@ -344,11 +344,11 @@ export const performanceMonitoring = {
     useEffect(() => {
       renderCount.current++;
       const duration = Date.now() - startTime.current;
-      
+
       if (duration > 100) {
         console.warn(`[Performance] ${componentName} took ${duration}ms to render`);
       }
-      
+
       if (renderCount.current > 10) {
         console.warn(`[Performance] ${componentName} rendered ${renderCount.current} times`);
       }
@@ -360,10 +360,10 @@ export const performanceMonitoring = {
    */
   useMemoryMonitor: (threshold = 100 * 1024 * 1024) => { // 100MB
     useEffect(() => {
-      if (typeof performance === 'undefined' || !performance.memory) return;
+      if (typeof performance === 'undefined' || !(performance as any).memory) return;
 
       const checkMemory = () => {
-        const usedMemory = performance.memory.usedJSHeapSize;
+        const usedMemory = (performance as any).memory.usedJSHeapSize;
         if (usedMemory > threshold) {
           console.warn(`[Memory] High memory usage: ${(usedMemory / 1024 / 1024).toFixed(2)}MB`);
         }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useCollection, useFirestore, useAuth } from '@/firebase';
 import { collection, query, where, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import type { Subscription, Product } from '@/lib/types';
+import type { Constraint } from '@/firebase/firestore/utils';
 import { toast } from '@/hooks/use-toast';
 
 export interface UseSubscriptionsOptions {
@@ -28,7 +29,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}): UseSubs
 
   // Build query constraints based on customerId
   const constraints = useMemo(() => {
-    const baseConstraints = [];
+    const baseConstraints: Constraint[] = [];
     if (customerId) {
       baseConstraints.push(['where', 'customerId', '==', customerId]);
     }
@@ -39,15 +40,15 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}): UseSubs
   const { data: subscriptions, loading, error: collectionError } = useCollection<Subscription>(
     'subscriptions',
     {
-      constraints,
-      enabled: enabled && !!firestore
+      constraints: constraints,
+      disabled: !enabled || !firestore
     }
   );
 
   // Update error state when collection error changes
   useEffect(() => {
     if (collectionError) {
-      setError(collectionError);
+      setError(typeof collectionError === 'string' ? collectionError : collectionError.message);
     } else {
       setError(null);
     }
@@ -67,7 +68,7 @@ export function useSubscriptions(options: UseSubscriptionsOptions = {}): UseSubs
       };
 
       await addDoc(collection(firestore, 'subscriptions'), subscriptionData);
-      
+
       toast({
         title: 'Subscription Created',
         description: 'Your subscription has been created successfully.'

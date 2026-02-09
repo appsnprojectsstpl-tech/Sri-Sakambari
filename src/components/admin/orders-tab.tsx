@@ -200,8 +200,8 @@ export default function OrdersTab({
                 </div>
             </div>
 
-            {/* Content */}
-            <div className="rounded-md border bg-card">
+            {/* Desktop Table View */}
+            <div className="hidden md:block rounded-md border bg-card overflow-hidden">
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-muted/50">
@@ -326,31 +326,114 @@ export default function OrdersTab({
                         )}
                     </TableBody>
                 </Table>
+            </div>
 
-                {/* Pagination Footer */}
-                <div className="flex items-center justify-between p-4 border-t">
-                    <div className="text-sm text-muted-foreground">
-                        Showing {filteredOrders.length} results
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onPrevPage}
-                            disabled={pageIndex === 0 || loading}
-                        >
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Previous
-                        </Button>
-                        <div className="text-sm font-medium">Page {pageIndex + 1}</div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onNextPage}
-                            disabled={!hasMore || loading}
-                        >
-                            Next <ArrowRight className="h-4 w-4 ml-2" />
-                        </Button>
-                    </div>
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+                {loading ? (
+                    <div className="p-8 text-center bg-card rounded-lg border">Loading orders...</div>
+                ) : filteredOrders.length === 0 ? (
+                    <div className="p-8 text-center bg-card rounded-lg border text-muted-foreground">No orders found.</div>
+                ) : (
+                    filteredOrders.map((order) => {
+                        const customer = users.find(u => u.id === order.customerId);
+                        const driver = users.find(u => u.id === order.deliveryPartnerId);
+                        const date = order.createdAt instanceof Date
+                            ? order.createdAt
+                            : new Date((order.createdAt as any).seconds * 1000);
+
+                        return (
+                            <Card key={order.id} className="overflow-hidden border-2">
+                                <CardHeader className="p-4 flex flex-row items-center justify-between space-y-0 bg-muted/20 border-b">
+                                    <div className="space-y-1">
+                                        <CardTitle className="text-base font-mono">#{order.id.slice(0, 8)}</CardTitle>
+                                        <CardDescription className="text-[10px]">{format(date, 'MMM d, h:mm a')}</CardDescription>
+                                    </div>
+                                    <Badge variant={STATUS_COLORS[order.status] || 'default'}>
+                                        {order.status.replace(/_/g, ' ')}
+                                    </Badge>
+                                </CardHeader>
+                                <CardContent className="p-4 space-y-3">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="font-bold text-sm">{customer?.name || 'Unknown'}</div>
+                                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                                <MapPin className="h-3 w-3" /> {order.area}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-lg font-bold text-primary">₹{order.totalAmount}</div>
+                                            <div className="text-[10px] text-muted-foreground">{order.paymentMode}</div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 p-2 bg-muted/30 rounded text-xs">
+                                        <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <button className="flex-1 text-left font-medium">
+                                                    {driver ? driver.name : <span className="text-orange-600">Assign Driver</span>}
+                                                </button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="start" className="w-[200px]">
+                                                <DropdownMenuLabel>Select Driver</DropdownMenuLabel>
+                                                <DropdownMenuSeparator />
+                                                {deliveryStaff.map(staff => (
+                                                    <DropdownMenuItem key={staff.id} onClick={() => handleAssignDriver(order.id, staff)}>
+                                                        {staff.name}
+                                                    </DropdownMenuItem>
+                                                ))}
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+
+                                    <div className="pt-2 flex gap-2">
+                                        <Button variant="outline" size="sm" className="flex-1 h-9 text-xs" onClick={() => handleViewDetails(order)}>
+                                            Details
+                                        </Button>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button size="sm" className="flex-1 h-9 text-xs">Update Status</Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-[180px]">
+                                                <DropdownMenuItem onClick={() => handleStatusChange(order.id, 'CONFIRMED')}>Confirm</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleStatusChange(order.id, 'OUT_FOR_DELIVERY')}>Out for Delivery</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => handleStatusChange(order.id, 'DELIVERED')}>Mark Delivered</DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem className="text-destructive" onClick={() => handleStatusChange(order.id, 'CANCELLED')}>Cancel Order</DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        );
+                    })
+                )}
+            </div>
+
+            {/* Pagination Footer */}
+            <div className="flex items-center justify-between p-4 border-t bg-card rounded-lg border">
+                <div className="text-sm text-muted-foreground hidden sm:block">
+                    Showing {filteredOrders.length} results
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onPrevPage}
+                        disabled={pageIndex === 0 || loading}
+                    >
+                        <ArrowLeft className="h-4 w-4 mr-2" /> Previous
+                    </Button>
+                    <div className="text-sm font-medium">Page {pageIndex + 1}</div>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onNextPage}
+                        disabled={!hasMore || loading}
+                    >
+                        Next <ArrowRight className="h-4 w-4 ml-2" />
+                    </Button>
                 </div>
             </div>
 

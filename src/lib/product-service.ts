@@ -1,5 +1,5 @@
 import { Product, ProductVariant } from '@/lib/types';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { firestore as db } from '@/firebase';
 
 export interface ProductFilters {
@@ -11,7 +11,7 @@ export interface ProductFilters {
 }
 
 export interface ProductSort {
-  field: 'name' | 'price' | 'stockQuantity' | 'createdAt' | 'displayOrder';
+  field: 'name' | 'pricePerUnit' | 'stockQuantity' | 'createdAt' | 'displayOrder';
   direction: 'asc' | 'desc';
 }
 
@@ -39,7 +39,7 @@ export class ProductService {
    * Get products with filters and sorting
    */
   async getProducts(filters: ProductFilters = {}, sort: ProductSort = { field: 'displayOrder', direction: 'asc' }): Promise<Product[]> {
-    let q = collection(db, this.collectionName);
+    let q: any = collection(db, this.collectionName);
     const constraints: any[] = [];
 
     // Apply filters
@@ -67,7 +67,7 @@ export class ProductService {
     // Apply search filter if provided
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
-      products = products.filter(product => 
+      products = products.filter(product =>
         product.name.toLowerCase().includes(searchLower) ||
         product.name_te?.toLowerCase().includes(searchLower) ||
         product.category.toLowerCase().includes(searchLower)
@@ -76,8 +76,8 @@ export class ProductService {
 
     // Apply sorting
     products.sort((a, b) => {
-      let aValue = a[sort.field];
-      let bValue = b[sort.field];
+      let aValue = (a as any)[sort.field];
+      let bValue = (b as any)[sort.field];
 
       // Handle undefined values
       if (aValue === undefined) aValue = '';
@@ -98,9 +98,9 @@ export class ProductService {
    */
   async getProductsGroupedBySubcategory(category: string): Promise<ProductGroup[]> {
     const products = await this.getProducts({ category, isActive: true });
-    
+
     const groups: Record<string, Product[]> = {};
-    
+
     products.forEach(product => {
       const subCategory = product.subCategory || 'Other';
       if (!groups[subCategory]) {
@@ -134,7 +134,7 @@ export class ProductService {
       ...productData,
       createdAt: serverTimestamp()
     });
-    
+
     return {
       id: docRef.id,
       ...productData,
@@ -172,11 +172,11 @@ export class ProductService {
    */
   async bulkUpdate(updates: { id: string; data: Partial<Product> }[]): Promise<void> {
     const batch = writeBatch(db);
-    
+
     updates.forEach(({ id, data }) => {
       batch.update(doc(db, this.collectionName, id), data);
     });
-    
+
     await batch.commit();
   }
 
@@ -185,9 +185,9 @@ export class ProductService {
    */
   async getLowStockProducts(threshold: number = 5): Promise<Product[]> {
     const products = await this.getProducts({ isActive: true });
-    return products.filter(product => 
-      product.trackInventory && 
-      product.stockQuantity <= threshold && 
+    return products.filter(product =>
+      product.trackInventory &&
+      product.stockQuantity <= threshold &&
       product.stockQuantity > 0
     );
   }
@@ -197,8 +197,8 @@ export class ProductService {
    */
   async getOutOfStockProducts(): Promise<Product[]> {
     const products = await this.getProducts({ isActive: true });
-    return products.filter(product => 
-      product.trackInventory && 
+    return products.filter(product =>
+      product.trackInventory &&
       product.stockQuantity === 0
     );
   }
@@ -207,10 +207,10 @@ export class ProductService {
    * Search products
    */
   async searchProducts(searchTerm: string, category?: string): Promise<Product[]> {
-    return this.getProducts({ 
-      searchTerm, 
+    return this.getProducts({
+      searchTerm,
       category,
-      isActive: true 
+      isActive: true
     });
   }
 }

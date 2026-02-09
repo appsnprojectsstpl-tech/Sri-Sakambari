@@ -10,6 +10,7 @@ interface SeasonalCarouselProps {
     cart: CartItem[];
     addToCart: (product: Product, quantity: number, isCut: boolean, variant?: ProductVariant | null) => void;
     updateCartQuantity: (productId: string, isCut: boolean, newQuantity: number, variantId?: string) => void;
+    onProductClick?: (product: Product) => void;
 }
 
 export default function SeasonalCarousel({
@@ -17,7 +18,8 @@ export default function SeasonalCarousel({
     loading,
     cart,
     addToCart,
-    updateCartQuantity
+    updateCartQuantity,
+    onProductClick
 }: SeasonalCarouselProps) {
 
     if (loading) {
@@ -56,6 +58,7 @@ export default function SeasonalCarousel({
                                 // or calculate if legacy fallback needed. 
                                 // ProductCard handles variant logic internally mostly now.
                                 cartQuantity={0}
+                                onClick={onProductClick ? () => onProductClick(product) : undefined}
                             />
                         </div>
                     );

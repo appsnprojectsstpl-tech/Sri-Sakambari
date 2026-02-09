@@ -25,10 +25,12 @@ import { doc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/fires
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Upload, Plus, Minus, ImagePlus, Loader2, X, AlertCircle, GripVertical } from 'lucide-react';
+import { Upload, Plus, Minus, ImagePlus, Loader2, X, AlertCircle, GripVertical, Trash2 } from 'lucide-react';
 import { detectCategoryAndUnit } from '@/lib/product-keywords';
+import { cn } from '@/lib/utils';
+import { haptics, ImpactStyle } from '@/lib/haptics';
 
-const PRODUCT_UNITS = ['Kg', 'Grms', 'Ltr', 'ML', 'Pcs', 'Pkts'];
+const PRODUCT_UNITS = ['Kg', 'Grms', 'Ltr', 'ML', 'Pcs', 'Pkts', 'Mixed'];
 
 const VEG_VARIANT_EXCLUSIONS = ['cabbage', 'cauliflower', 'califlour', 'lettuce', 'broccoli', 'pumpkin'];
 
@@ -36,11 +38,11 @@ const VEG_VARIANT_EXCLUSIONS = ['cabbage', 'cauliflower', 'califlour', 'lettuce'
 // Define categories centrally (consider moving to constants file)
 const PRODUCT_CATEGORIES = [
     'Vegetables',
-    'Leafy Vegetables',
+    'Leafy Veg',
     'Fruits',
     'Dairy',
     'Cool Drinks',
-    'Drinking Water'
+    'Water'
 ];
 
 interface ProductFormSheetProps {
@@ -48,6 +50,7 @@ interface ProductFormSheetProps {
     onOpenChange: (open: boolean) => void;
     product: Partial<Product> | null; // Null means "New Product"
     onSave: () => void;
+    isPriceOnly?: boolean;
 }
 
 const initialProductState: Partial<Product> = {
@@ -67,6 +70,7 @@ const initialProductState: Partial<Product> = {
     stockQuantity: 0,
     trackInventory: true,
     variants: [],
+    soldBy: 'pcs', // Default to per piece
     seoTitle: '',
     seoDescription: '',
     keywords: []
@@ -180,27 +184,27 @@ function SortableVariantItem({ variant, images, manageStockBy, onUpdate, onRemov
 // Default units per category for auto-detection
 const CATEGORY_DEFAULT_UNITS: Record<string, string> = {
     'Vegetables': 'Kg',
-    'Leafy Vegetables': 'Pcs', // Bunches
+    'Leafy Veg': 'Pcs', // Bunches
     'Fruits': 'Kg',
     'Dairy': 'Pkts', // Packets
     'Cool Drinks': 'Pcs', // Bottles/Cans
-    'Drinking Water': 'Pcs' // Cans/Bottles
+    'Water': 'Pcs' // Cans/Bottles
 };
 
 // Default stock mode per category
 const CATEGORY_DEFAULT_STOCK_MODE: Record<string, 'count' | 'weight' | 'volume'> = {
     'Vegetables': 'weight',
-    'Leafy Vegetables': 'count', // Usually sold by bunch (Pcs)
+    'Leafy Veg': 'count', // Usually sold by bunch (Pcs)
     'Fruits': 'weight',
     'Dairy': 'count',
     'Cool Drinks': 'count',
-    'Drinking Water': 'count',
+    'Water': 'count',
     'Groceries': 'weight', // Rice, Dal etc.
     'Meat': 'weight',
     'Eggs': 'count'
 };
 
-export function ProductFormSheet({ open, onOpenChange, product, onSave }: ProductFormSheetProps) {
+export function ProductFormSheet({ open, onOpenChange, product, onSave, isPriceOnly }: ProductFormSheetProps) {
     const { toast } = useToast();
     const firestore = useFirestore();
 
@@ -460,6 +464,12 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
 
         setIsSubmitting(true);
         try {
+            // Generate variant group ID for master products if not exists
+            let variantGroupId = formData.variantGroupId;
+            if (formData.isMasterProduct && !variantGroupId) {
+                variantGroupId = formData.id || crypto.randomUUID();
+            }
+
             const finalProductData = {
                 ...formData,
                 pricePerUnit: Number(formData.pricePerUnit),
@@ -476,6 +486,10 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                 variants: formData.variants || [],
                 images: formData.images || [],
                 keywords: formData.keywords || [],
+                // Only include variantGroupId if it has a value (Firestore doesn't allow undefined)
+                ...(variantGroupId ? { variantGroupId } : {}),
+                // Ensure isMasterProduct is set properly
+                isMasterProduct: formData.isMasterProduct || false,
                 updatedAt: serverTimestamp()
             };
 
@@ -531,6 +545,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                         onChange={e => handleChange('name', e.target.value)}
                                         placeholder="e.g. Tomato, Milk, Chicken"
                                         className="text-lg bg-white"
+                                        disabled={isPriceOnly}
                                         autoFocus // Auto focus on open
                                     />
                                     <p className="text-xs text-muted-foreground">Category & Unit will be set automatically.</p>
@@ -542,6 +557,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                         <Select
                                             value={formData.category}
                                             onValueChange={val => handleChange('category', val)}
+                                            disabled={isPriceOnly}
                                         >
                                             <SelectTrigger className="bg-white"><SelectValue placeholder="Category" /></SelectTrigger>
                                             <SelectContent>
@@ -554,6 +570,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                         <Select
                                             value={formData.unit}
                                             onValueChange={val => handleChange('unit', val)}
+                                            disabled={isPriceOnly}
                                         >
                                             <SelectTrigger className="bg-white"><SelectValue placeholder="Unit" /></SelectTrigger>
                                             <SelectContent>
@@ -561,6 +578,81 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                </div>
+
+                                {/* Sold By - Simplified Product Type Selection */}
+                                <div className="grid gap-2 bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                                    <Label htmlFor="soldBy" className="font-semibold text-blue-900">Sold By</Label>
+                                    <Select
+                                        value={formData.soldBy || 'pcs'}
+                                        disabled={isPriceOnly}
+                                        onValueChange={(val: 'pcs' | 'kg') => {
+                                            handleChange('soldBy', val);
+
+                                            // Auto-create variants for Per Kg
+                                            if (val === 'kg' && (!formData.variants || formData.variants.length === 0)) {
+                                                const basePrice = formData.pricePerUnit || 0;
+                                                const autoVariants: ProductVariant[] = [
+                                                    {
+                                                        id: crypto.randomUUID(),
+                                                        unit: '250g',
+                                                        price: Math.round(basePrice * 0.25),
+                                                        stock: 0,
+                                                        image: formData.imageUrl || ''
+                                                    },
+                                                    {
+                                                        id: crypto.randomUUID(),
+                                                        unit: '500g',
+                                                        price: Math.round(basePrice * 0.50),
+                                                        stock: 0,
+                                                        image: formData.imageUrl || ''
+                                                    },
+                                                    {
+                                                        id: crypto.randomUUID(),
+                                                        unit: '1kg',
+                                                        price: basePrice,
+                                                        stock: 0,
+                                                        image: formData.imageUrl || ''
+                                                    }
+                                                ];
+                                                handleChange('variants', autoVariants);
+                                                setHasVariants(true);
+                                                toast({
+                                                    title: "Weight variants added",
+                                                    description: "Added 250g, 500g, and 1kg variants. You can customize them below."
+                                                });
+                                            }
+
+                                            // Clear variants for Per Pcs
+                                            if (val === 'pcs') {
+                                                handleChange('variants', []);
+                                                setHasVariants(false);
+                                            }
+                                        }}
+                                    >
+                                        <SelectTrigger className="bg-white">
+                                            <SelectValue placeholder="Select how product is sold" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="pcs">
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold">Per Pcs</span>
+                                                    <span className="text-xs text-muted-foreground">Sold by pieces (e.g., 1 cabbage)</span>
+                                                </div>
+                                            </SelectItem>
+                                            <SelectItem value="kg">
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold">Per Kg</span>
+                                                    <span className="text-xs text-muted-foreground">Weight-based with variants (250g, 500g, 1kg)</span>
+                                                </div>
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-blue-700">
+                                        {formData.soldBy === 'kg'
+                                            ? '✓ Weight variants will be auto-created (you can customize them)'
+                                            : '✓ Product sold as individual pieces'}
+                                    </p>
                                 </div>
                             </div>
 
@@ -591,7 +683,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                                 accept="image/*"
                                                 className="hidden"
                                                 onChange={handleImageUpload}
-                                                disabled={uploadingImage}
+                                                disabled={uploadingImage || isPriceOnly}
                                             />
                                             {uploadingImage && <div className="absolute inset-0 bg-white/80 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>}
                                         </div>
@@ -643,6 +735,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                                 type="button"
                                                 size="sm"
                                                 variant="secondary"
+                                                disabled={isPriceOnly}
                                                 onClick={() => {
                                                     const url = formData.imageHint;
                                                     if (url && isValidUrl(url)) {
@@ -684,31 +777,110 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                     </div>
 
                                     {/* Price & Stock */}
-                                    <div className="flex-1 grid gap-4">
+                                    <div className="flex-1 space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-base font-bold">Pricing & Stock</Label>
+                                            {false && formData.category === 'Fruits' && (
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    disabled={isPriceOnly}
+                                                    onClick={() => {
+                                                        const fruitVariants: ProductVariant[] = [
+                                                            { id: crypto.randomUUID(), unit: '1 Pc', price: formData.pricePerUnit || 0, stock: 0 },
+                                                            { id: crypto.randomUUID(), unit: '1 Kg', price: formData.pricePerUnit || 0, stock: 0 }
+                                                        ];
+                                                        setFormData(prev => ({
+                                                            ...prev,
+                                                            variants: fruitVariants,
+                                                            unit: 'Mixed',
+                                                            trackInventory: true,
+                                                            manageStockBy: 'count'
+                                                        }));
+                                                        setHasVariants(true);
+                                                        haptics.impact(ImpactStyle.Light);
+                                                        toast({ title: "Fruit sizes added", description: "Added 1 Pc and 1 Kg variants. Stock is now managed per size." });
+                                                    }}
+                                                    className="h-8 text-xs gap-1.5 border-orange-200 text-orange-700 hover:bg-orange-50"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    Auto-Fill Fruit Sizes
+                                                </Button>
+                                            )}
+                                        </div>
+
+
+                                        {/* Stock Management Mode Selector - HIDDEN: Replaced by simpler "Sold By" dropdown */}
+                                        {false && (
+                                            <div className="bg-muted/30 p-3 rounded-xl border border-border/50 space-y-3">
+                                                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stock Management Mode</Label>
+                                                <RadioGroup
+                                                    value={formData.trackInventory ? (formData.manageStockBy || 'count') : 'none'}
+                                                    onValueChange={(val) => {
+                                                        if (val === 'none') {
+                                                            setFormData(prev => ({ ...prev, trackInventory: false }));
+                                                        } else {
+                                                            setFormData(prev => ({ ...prev, trackInventory: true, manageStockBy: val as any }));
+                                                        }
+                                                    }}
+                                                    className="grid grid-cols-3 gap-2"
+                                                >
+                                                    <div className="flex items-center space-x-2 bg-white p-2 rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50">
+                                                        <RadioGroupItem value="weight" id="stock-weight" />
+                                                        <Label htmlFor="stock-weight" className="text-[10px] leading-tight cursor-pointer">Master Stock (Total Kg/L)</Label>
+                                                    </div>
+                                                    <div className="flex items-center space-x-2 bg-white p-2 rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50">
+                                                        <RadioGroupItem value="count" id="stock-count" />
+                                                        <Label htmlFor="stock-count" className="text-[10px] leading-tight cursor-pointer">Per Variant (Count)</Label>
+                                                    </div>
+                                                    <div className="flex items-center space-x-2 bg-white p-2 rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50">
+                                                        <RadioGroupItem value="none" id="stock-none" />
+                                                        <Label htmlFor="stock-none" className="text-[10px] leading-tight cursor-pointer">No Tracking</Label>
+                                                    </div>
+                                                </RadioGroup>
+                                            </div>
+                                        )}
+
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="grid gap-2">
                                                 <Label htmlFor="price">Price (₹)</Label>
                                                 <Input id="price" type="number" value={formData.pricePerUnit} onChange={e => handleChange('pricePerUnit', e.target.value)} className="font-bold text-lg" placeholder="0" />
                                             </div>
-                                            <div className="grid gap-2">
-                                                <Label htmlFor="mrp" className="text-muted-foreground">Original (MRP)</Label>
-                                                <Input id="mrp" type="number" value={formData.originalPrice} onChange={e => handleChange('originalPrice', e.target.value)} placeholder="0" />
-                                            </div>
+                                            {false && (
+                                                <div className="grid gap-2">
+                                                    <Label htmlFor="mrp" className="text-muted-foreground">Original (MRP)</Label>
+                                                    <Input id="mrp" type="number" value={formData.originalPrice} onChange={e => handleChange('originalPrice', e.target.value)} placeholder="0" />
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="single-stock">
-                                                {formData.manageStockBy === 'weight' ? 'Total Master Stock (Kg/L)' : 'Current Stock (Qty)'}
+                                            <Label htmlFor="single-stock" className={cn(
+                                                formData.manageStockBy === 'count' && (formData.variants?.length || 0) > 0 ? "text-muted-foreground" : ""
+                                            )}>
+                                                {formData.manageStockBy === 'weight'
+                                                    ? 'Total Master Stock (Kg/L)'
+                                                    : (formData.manageStockBy === 'count' && (formData.variants?.length || 0) > 0)
+                                                        ? 'Total Calculated Stock'
+                                                        : 'Current Stock (Qty)'}
                                             </Label>
                                             <Input
                                                 id="single-stock"
                                                 type="number"
                                                 value={effectiveStock}
                                                 onChange={e => handleChange('stockQuantity', e.target.value)}
-                                                className="bg-green-50 border-green-200"
+                                                className={cn(
+                                                    "bg-green-50 border-green-200",
+                                                    (formData.manageStockBy === 'count' && (formData.variants?.length || 0) > 0) && "bg-gray-100 border-gray-200 cursor-not-allowed opacity-70"
+                                                )}
                                                 placeholder="Stock"
+                                                readOnly={(formData.manageStockBy === 'count' && (formData.variants?.length || 0) > 0) || isPriceOnly}
                                             />
                                             {formData.manageStockBy === 'weight' && (
-                                                <p className="text-[10px] text-muted-foreground">Variants deduct from this.</p>
+                                                <p className="text-[10px] text-muted-foreground">Variants deduct from this shared pile.</p>
+                                            )}
+                                            {formData.manageStockBy === 'count' && (formData.variants?.length || 0) > 0 && (
+                                                <p className="text-[10px] text-orange-600 font-medium italic">Stock is managed inside each size below.</p>
                                             )}
                                         </div>
                                     </div>
@@ -716,13 +888,14 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                             </div>
 
                             {/* 3. Cut Service (Conditional) */}
-                            {(formData.category === 'Vegetables' || formData.category === 'Leafy Vegetables') && (
+                            {(formData.category === 'Vegetables' || formData.category === 'Leafy Veg') && (
                                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
                                     <div className="flex items-center space-x-2 mb-2">
                                         <Checkbox
                                             id="cutService"
                                             checked={formData.isCutVegetable}
                                             onCheckedChange={(c) => {
+                                                if (isPriceOnly) return;
                                                 handleChange('isCutVegetable', c);
                                                 if (c && (!formData.cutCharge || formData.cutCharge === 0)) {
                                                     handleChange('cutCharge', 10);
@@ -739,6 +912,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                                 type="number"
                                                 value={formData.cutCharge}
                                                 onChange={e => handleChange('cutCharge', e.target.value)}
+                                                disabled={isPriceOnly}
                                                 className="w-32 bg-white mt-1"
                                                 placeholder="10"
                                             />
@@ -747,10 +921,48 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                 </div>
                             )}
 
-                            {/* 4. Variants Toggle & Section */}
+                            {/* 4. Master Product & Variants Toggle & Section */}
                             <div className="pt-4 border-t">
                                 <div className="flex items-center justify-between mb-4">
                                     <Label className="text-base text-muted-foreground">Product Variants</Label>
+                                    <div className="flex items-center gap-2">
+                                        {false && (
+                                            <>
+                                                <Checkbox
+                                                    id="isMasterProduct"
+                                                    checked={formData.isMasterProduct || false}
+                                                    onCheckedChange={(checked) => {
+                                                        handleChange('isMasterProduct', checked);
+                                                        if (checked) {
+                                                            // When marking as master product, ensure it has variants
+                                                            if (!hasVariants || (!formData.variants || formData.variants.length === 0)) {
+                                                                setHasVariants(true);
+                                                                if (formData.category === 'Vegetables') {
+                                                                    const lowerName = String(formData.name).toLowerCase();
+                                                                    const isExcluded = VEG_VARIANT_EXCLUSIONS.some(ex => lowerName.includes(ex));
+
+                                                                    if (!isExcluded) {
+                                                                        const basePrice = Number(formData.pricePerUnit || 0);
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            manageStockBy: 'weight',
+                                                                            variants: [
+                                                                                { id: crypto.randomUUID(), unit: '250g', price: basePrice > 0 ? Math.ceil(basePrice * 0.25) : 0, stock: 0 },
+                                                                                { id: crypto.randomUUID(), unit: '500g', price: basePrice > 0 ? Math.ceil(basePrice * 0.5) : 0, stock: 0 },
+                                                                                { id: crypto.randomUUID(), unit: '1Kg', price: basePrice, stock: 0 },
+                                                                            ]
+                                                                        }));
+                                                                        toast({ title: "Master Product Setup", description: "Auto-added standard variants for master product." });
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                                <Label htmlFor="isMasterProduct" className="font-semibold cursor-pointer">Master Product</Label>
+                                            </>
+                                        )}
+                                    </div>
                                     <Button
                                         type="button"
                                         variant={hasVariants ? "secondary" : "outline"}
@@ -782,6 +994,7 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                     >
                                         {hasVariants ? "Hide Variants" : "Add Variants / Sizes +"}
                                     </Button>
+                                    {isPriceOnly && <span className="text-[10px] text-muted-foreground ml-2">(ReadOnly)</span>}
                                 </div>
 
                                 {hasVariants && (
@@ -792,52 +1005,76 @@ export function ProductFormSheet({ open, onOpenChange, product, onSave }: Produc
                                                 ? " Stock is managed by the Main Total Stock above."
                                                 : " Enter specific stock for each size below."}
                                         </div>
-                                        <div className="flex items-end gap-2 border p-3 rounded-lg bg-gray-50">
-                                            <div className="flex-1">
-                                                <Label className="text-xs">Unit (e.g. 500g)</Label>
-                                                <Input className="bg-white" value={newVariant.unit} onChange={e => setNewVariant({ ...newVariant, unit: e.target.value })} placeholder="Size" />
+                                        {/* Simplified Variant Display - Auto-calculated from base price */}
+                                        <div className="p-4 border rounded-xl bg-blue-50/50 border-blue-200 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <Label className="text-sm font-semibold text-blue-900">Weight Variants</Label>
+                                                <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-tighter bg-blue-100 text-blue-700">Auto-calculated</Badge>
                                             </div>
-                                            <div className="w-24">
-                                                <Label className="text-xs">Price</Label>
-                                                <Input className="bg-white" type="number" value={newVariant.price} onChange={e => setNewVariant({ ...newVariant, price: e.target.value })} placeholder="₹" />
-                                            </div>
-                                            <div className="w-24">
-                                                <Label className="text-xs">Stock</Label>
-                                                <Input className="bg-white" type="number" value={newVariant.stock} onChange={e => setNewVariant({ ...newVariant, stock: e.target.value })} placeholder="#" />
-                                            </div>
-                                            <Button type="button" onClick={handleAddVariant} size="icon">
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
+                                            <p className="text-xs text-blue-700">
+                                                Prices are automatically calculated from your base price. You can edit them below if needed.
+                                            </p>
                                         </div>
 
                                         <div className="space-y-2">
                                             {formData.variants?.length === 0 && (
                                                 <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
-                                                    No variants added.<br />Add sizes like 500g, 1kg if needed.
+                                                    No variants added.<br />Select "Per Kg" in Sold By to auto-create weight variants.
                                                 </div>
                                             )}
 
-                                            <DndContext
-                                                sensors={sensors}
-                                                collisionDetection={closestCenter}
-                                                onDragEnd={handleDragEnd}
-                                            >
-                                                <SortableContext
-                                                    items={formData.variants?.map(v => v.id) || []}
-                                                    strategy={verticalListSortingStrategy}
-                                                >
-                                                    {formData.variants?.map((v) => (
-                                                        <SortableVariantItem
-                                                            key={v.id}
-                                                            variant={v}
-                                                            images={formData.images || []}
-                                                            manageStockBy={formData.manageStockBy || 'count'}
-                                                            onUpdate={handleUpdateVariant}
-                                                            onRemove={handleRemoveVariant}
-                                                        />
-                                                    ))}
-                                                </SortableContext>
-                                            </DndContext>
+                                            {/* Simple Variant Table */}
+                                            {formData.variants && formData.variants.length > 0 && (
+                                                <div className="border rounded-lg overflow-hidden">
+                                                    <table className="w-full">
+                                                        <thead className="bg-gray-100">
+                                                            <tr>
+                                                                <th className="text-left p-3 text-sm font-semibold">Size</th>
+                                                                <th className="text-left p-3 text-sm font-semibold">Price (₹)</th>
+                                                                <th className="text-right p-3 text-sm font-semibold w-20">Actions</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="bg-white divide-y">
+                                                            {formData.variants.map((variant) => (
+                                                                <tr key={variant.id} className="hover:bg-gray-50">
+                                                                    <td className="p-3">
+                                                                        <Input
+                                                                            value={variant.unit}
+                                                                            onChange={(e) => handleUpdateVariant(variant.id, 'unit', e.target.value)}
+                                                                            disabled={isPriceOnly}
+                                                                            className="h-8 w-24"
+                                                                            placeholder="250g"
+                                                                        />
+                                                                    </td>
+                                                                    <td className="p-3">
+                                                                        <Input
+                                                                            type="number"
+                                                                            value={variant.price}
+                                                                            onChange={(e) => handleUpdateVariant(variant.id, 'price', Number(e.target.value))}
+                                                                            disabled={isPriceOnly}
+                                                                            className="h-8 w-28 font-semibold"
+                                                                            placeholder="0"
+                                                                        />
+                                                                    </td>
+                                                                    <td className="p-3 text-right">
+                                                                        {!isPriceOnly && (
+                                                                            <Button
+                                                                                type="button"
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                onClick={() => handleRemoveVariant(variant.id)}
+                                                                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                            >
+                                                                                <Trash2 className="h-4 w-4" />
+                                                                            </Button>
+                                                                        )}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}

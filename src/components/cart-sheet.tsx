@@ -501,13 +501,8 @@ export default function CartSheet({
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-6 animate-in fade-in zoom-in duration-300">
-              <div className="relative w-48 h-48 mb-6 opacity-80">
-                <Image
-                  src="https://illustrations.popsy.co/amber/box.svg"
-                  alt="Empty Box"
-                  fill
-                  className="object-contain"
-                />
+              <div className="relative w-48 h-48 mb-6 opacity-80 flex items-center justify-center">
+                <ShoppingCart className="w-32 h-32 text-muted-foreground" strokeWidth={1} />
               </div>
               <h3 className="text-2xl font-bold text-gray-800 mb-2">{t('cartEmpty', language)}</h3>
               <p className="text-muted-foreground max-w-[200px] mb-8">{t('cartEmptyHint', language)}</p>
@@ -543,7 +538,7 @@ export default function CartSheet({
                   size="lg"
                   onClick={() => {
                     const itemsList = cart.map(item =>
-                      `- ${getProductName(item.product, language)} (${item.product.unit}) x ${item.quantity} ${item.isCut ? '(Cut)' : ''}`
+                      `- ${getProductName(item.product, language)} ${item.selectedVariant ? `(${item.selectedVariant.unit})` : `(${item.product.unit})`} x ${item.quantity} ${item.isCut ? '(Cut)' : ''}`
                     ).join('\n');
                     const text = `Hello, I want to order:\n\n${itemsList}\n\nTotal approx: ₹${finalTotal.toFixed(2)}`;
                     window.open(`https://wa.me/${settings.ownerPhone}?text=${encodeURIComponent(text)}`, '_blank');

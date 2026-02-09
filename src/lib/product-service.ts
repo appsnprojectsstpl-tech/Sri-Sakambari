@@ -68,9 +68,9 @@ export class ProductService {
     if (filters.searchTerm) {
       const searchLower = filters.searchTerm.toLowerCase();
       products = products.filter(product =>
-        product.name.toLowerCase().includes(searchLower) ||
-        product.name_te?.toLowerCase().includes(searchLower) ||
-        product.category.toLowerCase().includes(searchLower)
+        product?.name?.toLowerCase().includes(searchLower) ||
+        product?.name_te?.toLowerCase().includes(searchLower) ||
+        product?.category?.toLowerCase().includes(searchLower)
       );
     }
 
@@ -123,7 +123,7 @@ export class ProductService {
    */
   async getProductById(id: string): Promise<Product | null> {
     const products = await this.getProducts();
-    return products.find(p => p.id === id) || null;
+    return products?.find(p => p?.id === id) ?? null;
   }
 
   /**
@@ -185,11 +185,11 @@ export class ProductService {
    */
   async getLowStockProducts(threshold: number = 5): Promise<Product[]> {
     const products = await this.getProducts({ isActive: true });
-    return products.filter(product =>
-      product.trackInventory &&
-      product.stockQuantity <= threshold &&
-      product.stockQuantity > 0
-    );
+    return products?.filter(product =>
+      product?.trackInventory &&
+      (product?.stockQuantity ?? 0) <= threshold &&
+      (product?.stockQuantity ?? 0) > 0
+    ) ?? [];
   }
 
   /**
@@ -197,10 +197,10 @@ export class ProductService {
    */
   async getOutOfStockProducts(): Promise<Product[]> {
     const products = await this.getProducts({ isActive: true });
-    return products.filter(product =>
-      product.trackInventory &&
-      product.stockQuantity === 0
-    );
+    return products?.filter(product =>
+      product?.trackInventory &&
+      (product?.stockQuantity ?? 0) === 0
+    ) ?? [];
   }
 
   /**

@@ -95,14 +95,23 @@ function playNotificationSound() {
  * Show browser notification
  */
 function showBrowserNotification(orderData: any) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('New Order Received! 🛒', {
-            body: `Order #${orderData.id?.slice(0, 8)} - ₹${orderData.totalAmount}`,
-            icon: '/favicon.ico',
-            badge: '/favicon.ico',
-            tag: 'new-order',
-            requireInteraction: false,
-        });
+    // Check if Notification API is available (not available in all environments)
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+        return;
+    }
+
+    if (Notification.permission === 'granted') {
+        try {
+            new Notification('New Order Received! 🛒', {
+                body: `Order #${orderData.id?.slice(0, 8)} - ₹${orderData.totalAmount}`,
+                icon: '/favicon.ico',
+                badge: '/favicon.ico',
+                tag: 'new-order',
+                requireInteraction: false,
+            });
+        } catch (error) {
+            console.error('Failed to show notification:', error);
+        }
     }
 }
 
@@ -110,7 +119,11 @@ function showBrowserNotification(orderData: any) {
  * Request notification permission
  */
 export async function requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+        return false;
+    }
+
+    if (Notification.permission === 'default') {
         try {
             const permission = await Notification.requestPermission();
             return permission === 'granted';

@@ -326,7 +326,7 @@ export default function CartPage() {
     ];
 
     return (
-        <div className="h-screen bg-gray-50 flex flex-col pb-20">
+        <div className="h-[100dvh] bg-gray-50 flex flex-col">
             {/* Simple Header for Cart Page */}
             <div className="sticky top-0 z-50 bg-white border-b shadow-sm px-4 h-16 flex items-center gap-4">
                 <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-10 w-10">
@@ -335,7 +335,7 @@ export default function CartPage() {
                 <h1 className="text-xl font-headline font-bold text-gray-900">{t('yourCart', language)}</h1>
             </div>
 
-            <div className="flex-1 overflow-y-auto container max-w-2xl mx-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto container max-w-2xl mx-auto p-4 pb-24 space-y-4">
                 {/* Progress/Free Delivery Nudge */}
                 {cart.length > 0 && (
                     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-2">
@@ -444,7 +444,7 @@ export default function CartPage() {
 
             {/* Footer Actions */}
             {cart.length > 0 && (
-                <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 pb-8 z-40 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
+                <div className="mt-auto bg-white border-t p-4 z-40 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
                     <div className="container max-w-2xl mx-auto space-y-3">
                         <div className="flex justify-between items-center text-lg font-bold">
                             <span className="text-gray-900">{t('total', language)}</span>

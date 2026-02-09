@@ -4,6 +4,9 @@ export interface ShareData {
     url: string;
 }
 
+// APK download URL from GitHub releases
+const APK_DOWNLOAD_URL = 'https://github.com/appsnprojectsstpl-tech/Sri-Sakambari/releases/latest';
+
 export async function shareApp(data: ShareData): Promise<{ success: boolean; method: string }> {
     try {
         // Try Web Share API (works on mobile and modern browsers)
@@ -47,8 +50,8 @@ export async function shareApp(data: ShareData): Promise<{ success: boolean; met
 
 export function getShareData(): ShareData {
     return {
-        title: 'Sri Sakambari',
-        text: 'Browse fresh products and place orders easily!',
-        url: typeof window !== 'undefined' ? window.location.origin : 'https://studio-1474537647-7252f.web.app'
+        title: 'Sri Sakambari - Fresh Products Delivery',
+        text: `Download Sri Sakambari app and get fresh products delivered to your doorstep!\n\nDownload APK: ${APK_DOWNLOAD_URL}\n\nOr visit our website:`,
+        url: APK_DOWNLOAD_URL
     };
 }

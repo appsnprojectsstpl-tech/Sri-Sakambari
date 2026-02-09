@@ -2,29 +2,29 @@ import { Order, Product } from "./types";
 import { getProductName } from "./translations";
 
 export const generateThermalReceipt = (order: Order, products: Product[]) => {
-    // 58mm width is approx 200-220px visible, but for HTML print we can use 100% with a max-width container
-    // Standard thermal printers ignore margins if configured right, but we'll force basic CSS.
+  // 58mm width is approx 200-220px visible, but for HTML print we can use 100% with a max-width container
+  // Standard thermal printers ignore margins if configured right, but we'll force basic CSS.
 
-    const shopName = "Sri Sakambari";
-    const shopPhone = "9876543210"; // Replace with config
-    const date = new Date(order.createdAt as any).toLocaleString('en-IN');
+  const shopName = "Sri Sakambari";
+  const shopPhone = "9876543210"; // Replace with config
+  const date = new Date(order.createdAt as any).toLocaleString('en-IN');
 
-    let itemsHtml = '';
-    let totalQty = 0;
+  let itemsHtml = '';
+  let totalQty = 0;
 
-    order.items.forEach(item => {
-        // Attempt to find product to get Telugu name if needed, though order item usually has it.
-        // The OrderItem type has name_te.
-        const product = products.find(p => p.id === item.productId);
-        const displayName = item.name || product?.name || 'Item';
-        const displayUnit = item.unit || product?.unit || '';
-        const price = item.priceAtOrder * item.qty;
-        const cutCharge = item.cutCharge || 0;
-        const finalPrice = price + cutCharge;
+  order.items.forEach(item => {
+    // Attempt to find product to get Telugu name if needed, though order item usually has it.
+    // The OrderItem type has name_te.
+    const product = products?.find(p => p?.id === item?.productId);
+    const displayName = item?.name || product?.name || 'Item';
+    const displayUnit = item?.unit || product?.unit || '';
+    const price = (item?.priceAtOrder ?? 0) * (item?.qty ?? 1);
+    const cutCharge = item?.cutCharge || 0;
+    const finalPrice = price + cutCharge;
 
-        totalQty += item.qty;
+    totalQty += item.qty;
 
-        itemsHtml += `
+    itemsHtml += `
       <div class="item-row">
         <div class="item-name">${displayName} ${item.isCut ? '(Cut)' : ''}</div>
         <div class="item-details">
@@ -33,9 +33,9 @@ export const generateThermalReceipt = (order: Order, products: Product[]) => {
         </div>
       </div>
     `;
-    });
+  });
 
-    const htmlContent = `
+  const htmlContent = `
     <html>
       <head>
         <title>Receipt ${order.id}</title>
@@ -94,14 +94,28 @@ export const generateThermalReceipt = (order: Order, products: Product[]) => {
     </html>
   `;
 
+  try {
     const printWindow = window.open('', '', 'width=400,height=600');
-    if (printWindow) {
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-        }, 250);
+    if (!printWindow) {
+      console.error('Failed to open print window. Popup may be blocked.');
+      alert('Please allow popups to print receipts.');
+      return;
     }
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      try {
+        printWindow.print();
+        printWindow.close();
+      } catch (error) {
+        console.error('Print failed:', error);
+      }
+    }, 250);
+  } catch (error) {
+    console.error('Failed to generate receipt:', error);
+    alert('Failed to print receipt. Please try again.');
+  }
 };

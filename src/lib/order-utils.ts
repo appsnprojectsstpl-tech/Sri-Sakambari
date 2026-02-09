@@ -15,11 +15,11 @@ export function filterOrders(
     if (filters.searchTerm) {
         const searchLower = filters.searchTerm.toLowerCase();
         filtered = filtered.filter(order => {
-            const customer = users?.find(u => u.id === order.customerId);
+            const customer = users?.find(u => u?.id === order?.customerId);
             return (
-                order.id.toLowerCase().includes(searchLower) ||
-                order.name?.toLowerCase().includes(searchLower) ||
-                order.phone?.includes(searchLower) ||
+                order?.id?.toLowerCase().includes(searchLower) ||
+                order?.name?.toLowerCase().includes(searchLower) ||
+                order?.phone?.includes(searchLower) ||
                 customer?.name?.toLowerCase().includes(searchLower) ||
                 customer?.phone?.includes(searchLower)
             );
@@ -72,7 +72,7 @@ export function filterOrders(
  * Get unique areas from orders
  */
 export function getUniqueAreas(orders: Order[]): string[] {
-    const areas = new Set(orders.map(o => o.area).filter(Boolean));
+    const areas = new Set(orders?.map(o => o?.area).filter(Boolean) ?? []);
     return Array.from(areas).sort();
 }
 
